@@ -1,7 +1,7 @@
 # NIRUPRES
 
 A minimal, keyboard-oriented desktop presentation application by
-Nicklas Rudolfsson. Built with Python and Qt/PySide6, designed primarily
+Ing Leif Nicklas Rudolfsson. Built with Python and Qt/PySide6, designed primarily
 for the author's personal Linux setup (Omarchy/Arch and Debian).
 
 ## Features
@@ -55,5 +55,5 @@ major-version upgrades.
 
 ## License
 
-MIT License. Copyright (c) 2026 Nicklas Rudolfsson.
+MIT License. Copyright (c) 2026 Ing Leif Nicklas Rudolfsson.
 See [LICENSE](LICENSE) for the complete terms.
