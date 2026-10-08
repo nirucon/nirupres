@@ -55,5 +55,5 @@ major-version upgrades.
 
 ## License
 
-Copyright (c) 2026 Nicklas Rudolfsson. All rights reserved.
-See `LICENSE`. Publication on GitHub does not imply an open-source license.
+MIT License. Copyright (c) 2026 Nicklas Rudolfsson.
+See [LICENSE](LICENSE) for the complete terms.
