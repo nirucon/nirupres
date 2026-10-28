@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.0 — NIRUX-native presentation workflow
+
+- Added XDG data paths, noninteractive CLI (`--present`, `--talk`,
+  `--export-pdf`, `--check-config`) and MIME/desktop integration.
+- Added **Follow NIRUX** for editor chrome only, with semantic palette
+  mapping, live config refresh and a Noir fallback.
+- Added **Talk mode**: NIRUCLIP recording with the screen-mic, screen-camera and
+  camera-mic profiles, slide chapter markers and SRT sidecars.
+- Preserved project format 9, Markdown format 2, slide themes and exports.
+- Added release-gate checks for chrome mapping, Talk SRT markers and the new
+  command/version contracts.
+
+
 ## 2.0.0 — modularization candidate
 
 - Extracted the 1.7.3 monolithic application into dedicated modules for

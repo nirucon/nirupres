@@ -15,7 +15,7 @@ APP_INSTANCE = QApplication.instance() or QApplication([])
 import nirupres
 from nirupres import main as m
 
-EXPECTED_VERSION = "2.0.0"
+EXPECTED_VERSION = "2.1.0"
 
 def check(cond, msg):
     if not cond:
@@ -85,6 +85,23 @@ def main():
     # alone cannot detect this class of NameError.
     check(hasattr(m, "QIcon"), "QIcon missing from nirupres.main imports")
     check(m.QIcon().isNull(), "QIcon runtime smoke test failed")
+    from nirupres import theme as chrome
+    from nirupres import talk
+    check(chrome._hex("#abc", "000000")=="aabbcc" and chrome._hex("zzzzzz", "123456")=="123456", "chrome hex parser failed")
+    check(chrome.contrast_text("f3ece0") in ("090909","f6f3ed"), "chrome contrast helper failed")
+    with tempfile.TemporaryDirectory(prefix="nirupres-chrome-") as td:
+        root=Path(td); (root/"niruwm").mkdir()
+        (root/"niruwm"/"config.toml").write_text('theme = "niru-test"\n',encoding='utf-8')
+        (root/"niruwm"/"appearance.toml").write_text('[colors]\naccent = "123456"\n[font]\nsize = 16\n[motion]\nreduced = true\n',encoding='utf-8')
+        catalog=json.dumps({"active":"niru-test","themes":[{"id":"niru-test","name":"Test","colors":{"background":"101010","foreground":"eeeeee","muted":"999999","border":"303030","focus":"abcdef"}}]})
+        pal=chrome.load_nirux_chrome(root,catalog)
+        check(pal is not None and pal.background=="101010" and pal.accent=="123456" and pal.font_size==16 and pal.reduced_motion, "NIRUX chrome palette failed")
+        styled=chrome.chrome_style("QWidget{background:#080808;color:#e8e8e8;font-size:13px}",pal)
+        check("#101010" in styled and "#eeeeee" in styled and "font-size:16px" in styled, "NIRUX chrome QSS mapping failed")
+    markers=[{"slide":1,"title":"Opening","seconds":0},{"slide":2,"title":"Decision","seconds":65.2}]
+    subtitle=talk.srt_text(markers,130)
+    check("00:00:00,000 --> 00:01:05,200" in subtitle and "02 · Decision" in subtitle, "talk SRT marker mapping failed")
+    check(talk.safe_stem("Möte / 2026")=="Möte - 2026", "talk output stem sanitization failed")
     for name in ("UDDEVALLA DARK","UDDEVALLA BLACK","UDDEVALLA BLUE","UDDEVALLA GREEN","UDDEVALLA YELLOW","UDDEVALLA RED","UDDEVALLA PINK","UDDEVALLA PURPLE"):
         check(name in m.THEMES and m.THEMES[name].get("uddevalla"), f"missing theme {name}")
     check("UDDEVALLA LIGHT" not in m.THEMES, "duplicate Uddevalla Light must stay out of UI theme registry")
@@ -191,7 +208,7 @@ def main():
     # Top-level controls must be immediately usable. Controls inside collapsed
     # checkable inspector groups are intentionally disabled by Qt until their
     # parent group is expanded, so test those in their actual interactive state.
-    for label in ("EXPORT","?","▶ PRESENT","|▶","▣","◉ ONLINE","▦","SLIDES","INSPECTOR","OUTLINE","DECK SETTINGS…","PRESETS"):
+    for label in ("EXPORT","?","▶ PRESENT","|▶","▣","● TALK","◉ ONLINE","▦","SLIDES","INSPECTOR","OUTLINE","DECK SETTINGS…","PRESETS"):
         check(label in buttons, f"missing UI control: {label}")
         check(buttons[label].isEnabled(), f"disabled top-level UI control: {label}")
     for label in ("▶ PREVIEW","APPLY STYLE TO SELECTED"):

@@ -6,7 +6,7 @@ format versions remain unchanged.
 import json, sys, zipfile, tempfile, shutil, uuid, re, stat, os, platform, hashlib
 from collections import OrderedDict
 from pathlib import Path
-from PySide6.QtCore import Qt, QTimer, QSize, Signal, QRectF, QElapsedTimer, QEvent, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QStandardPaths, QUrl, QPointF, QVariantAnimation
+from PySide6.QtCore import Qt, QTimer, QSize, Signal, QRectF, QElapsedTimer, QEvent, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QStandardPaths, QUrl, QPointF, QVariantAnimation, QFileSystemWatcher
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QPixmap, QPainter, QColor, QFont, QFontMetrics, QFontDatabase, QPdfWriter, QPageSize, QPageLayout, QImage, QImageReader, QIcon, QTextDocument, QAbstractTextDocumentLayout, QPainterPath
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QListWidget,QListWidgetItem,QLineEdit,QTextEdit,QComboBox,QPushButton,QLabel,QFileDialog,QSplitter,QMessageBox,QToolBar,QCheckBox,QDialog,QGridLayout,QDialogButtonBox,QGraphicsScene,QGraphicsPixmapItem,QGraphicsBlurEffect,QSlider,QGroupBox,QFormLayout,QMenu,QInputDialog,QGraphicsOpacityEffect)
 
@@ -18,11 +18,18 @@ from .editor import *
 from .markdown_io import *
 from .markdown_io import _md_bool, _meta_block
 from .markdown_io import _md_bool, _meta_block
+from . import theme as chrome_theme
+from .talk import TalkSession
 class Main(QMainWindow):
     def __init__(self):
         super().__init__(); DATA.mkdir(parents=True,exist_ok=True); self.data=clone(DEFAULT); self.path=None; self.dirty=False; self.presenter=None; self.extract=tempfile.TemporaryDirectory(prefix='nirupres-'); self.history=[]; self.history_pos=-1; self._restoring=False; self._slide_clip=[]; self.outline_mode=False; self.file_prefs=load_file_prefs()
-        self.setWindowTitle(f'{APP} {VERSION}'); self.resize(1540,920); self.build(); self.setStyleSheet(STYLE); self.reload_recents(); self.refresh(); self.push_history()
+        self.setWindowTitle(f'{APP} {VERSION}'); self.resize(1540,920)
+        self.chrome_available=chrome_theme.detect_nirux(); preference=chrome_theme.read_follow_preference()
+        self.chrome_follow=self.chrome_available if preference is None else bool(preference) and self.chrome_available
+        self.chrome_palette=None; self.talk_session=None; self.build(); self.apply_chrome(); self.reload_recents(); self.refresh(); self.push_history()
         self.autotimer=QTimer(self); self.autotimer.setSingleShot(True); self.autotimer.setInterval(2500); self.autotimer.timeout.connect(self.autosave); self.histtimer=QTimer(self); self.histtimer.setSingleShot(True); self.histtimer.setInterval(500); self.histtimer.timeout.connect(self.push_history); QTimer.singleShot(250,self.offer_recovery)
+        self.chrome_debounce=QTimer(self); self.chrome_debounce.setSingleShot(True); self.chrome_debounce.setInterval(250); self.chrome_debounce.timeout.connect(self.refresh_chrome)
+        self.chrome_watcher=QFileSystemWatcher(self); self.chrome_watcher.fileChanged.connect(lambda _: self.chrome_debounce.start()); self.chrome_watcher.directoryChanged.connect(lambda _: self.chrome_debounce.start()); self._watch_chrome_files()
     def action(self,t,slot,key=None): a=QAction(t,self); a.triggered.connect(slot); key and a.setShortcut(QKeySequence(key)); return a
     def build(self):
         tb=QToolBar(); tb.setMovable(False); self.addToolBar(tb); self.toolbar=tb
@@ -30,10 +37,15 @@ class Main(QMainWindow):
         self.addAction(self.action('SAVE AS',self.save_as,'Ctrl+Shift+S'))
         tb.addSeparator(); tb.addAction(self.action('+ SLIDE',self.add,'Ctrl+Enter')); tb.addAction(self.action('DUPLICATE',self.dup,'Ctrl+D')); tb.addAction(self.action('DELETE',self.delete,'Delete')); tb.addSeparator(); tb.addAction(self.action('↶',self.undo,'Ctrl+Z'));tb.addAction(self.action('↷',self.redo,'Ctrl+Shift+Z'))
         tb.addSeparator(); export=QPushButton('EXPORT'); export.setObjectName('menuButton'); export.setToolTip('Export presentation…'); em=QMenu(export); em.addAction(self.action('Current slide → PNG',self.export_png,'Ctrl+Alt+E'));em.addAction(self.action('All slides → PNG',self.export_all_png));em.addAction(self.action('Deck → PDF',self.export_pdf,'Ctrl+Shift+E'));em.addAction(self.action('Deck → PPTX (pixel-perfect)',self.export_pptx)); em.addSeparator(); em.addAction(self.action('NIRUPRES Markdown…',self.export_markdown)); em.addAction(self.action('AI brief (current deck)…',self.export_ai_brief)); em.addAction(self.action('Copy AI prompt',self.copy_ai_prompt)); em.addAction(self.action('AI template/spec…',self.export_ai_template));export.setMenu(em);tb.addWidget(export); tb.addAction(self.action('IMPORT MD',self.import_markdown)); tb.addSeparator()
-        tb.addAction(self.action('FOCUS',self.toggle_focus,'Tab')); tb.addAction(self.action('⌘',self.command_palette,'Ctrl+K')); about=QPushButton('?'); about.setFixedWidth(34); about.setToolTip('About NIRUPRES / diagnostics'); about.clicked.connect(self.about); tb.addWidget(about); tb.addSeparator()
+        tb.addAction(self.action('FOCUS',self.toggle_focus,'Tab')); self.chrome_action=QAction('NIRUX',self); self.chrome_action.setCheckable(True); self.chrome_action.setChecked(self.chrome_follow); self.chrome_action.setEnabled(self.chrome_available); self.chrome_action.setToolTip('Follow NIRUX editor chrome · slide themes stay independent'); self.chrome_action.toggled.connect(self.set_chrome_follow); tb.addAction(self.chrome_action); tb.addAction(self.action('⌘',self.command_palette,'Ctrl+K')); about=QPushButton('?'); about.setFixedWidth(34); about.setToolTip('About NIRUPRES / diagnostics'); about.clicked.connect(self.about); tb.addWidget(about); tb.addSeparator()
         present=QPushButton('▶ PRESENT'); present.clicked.connect(lambda:self.present(False)); present.setObjectName('present'); present.setToolTip('Present from current slide · F5'); tb.addWidget(present)
         pstart=QPushButton('|▶'); pstart.setObjectName('presentAux'); pstart.setFixedWidth(42); pstart.setToolTip('Present from beginning · Shift+F5'); pstart.clicked.connect(lambda:self.present(True)); tb.addWidget(pstart)
         pview=QPushButton('▣'); pview.setObjectName('presentAux'); pview.setFixedWidth(42); pview.setToolTip('Presenter View / display'); pview.clicked.connect(self.presenter_view); tb.addWidget(pview)
+        talk=QPushButton('● TALK'); talk.setObjectName('presentAux'); talk.setMinimumWidth(84); talk.setToolTip('Present and record with NIRUCLIP · slide chapters and subtitles'); tmenu=QMenu(talk)
+        for label,profile in [('Screen + microphone','screen-mic'),('Screen + camera','screen-camera'),('Camera + microphone','camera-mic')]:
+            tmenu.addAction(label,lambda _=False,p=profile:self.start_talk(p))
+        tmenu.addSeparator(); tmenu.addAction('Talk helps / profiles…',lambda:self.talk_help())
+        talk.setMenu(tmenu); tb.addWidget(talk)
         online=QPushButton('◉ ONLINE'); online.setObjectName('presentAux'); online.setMinimumWidth(86); online.setToolTip('Online presentation · opens a clean Audience window for Teams/Meet/Zoom sharing'); online.clicked.connect(lambda:self.online_present(False)); tb.addWidget(online)
         pover=QPushButton('▦'); pover.setObjectName('presentAux'); pover.setFixedWidth(42); pover.setToolTip('Presentation overview'); pover.clicked.connect(self.presentation_overview); tb.addWidget(pover)
         # Hidden but keyboard-accessible editing actions
@@ -77,6 +89,64 @@ class Main(QMainWindow):
             elif isinstance(w,QSlider):w.valueChanged.connect(self.changed)
             else:w.textChanged.connect(self.changed)
         self.theme.currentTextChanged.connect(self.theme_changed); self.deckfont.currentTextChanged.connect(self.theme_changed); self.aspect.currentTextChanged.connect(self.theme_changed); self.numbers.toggled.connect(self.theme_changed); self.logo.toggled.connect(self.theme_changed); self.transition.currentTextChanged.connect(self.theme_changed); self.footer.textEdited.connect(self.footer_changed); self.guides.toggled.connect(self.guides_changed)
+    def talk_help(self):
+        message_info(self,'NIRUPRES Talk mode',
+            'Talk mode presents the deck from the beginning and records it with NIRUCLIP.\n\n'
+            'NIRUCLIP owns the capture process and state. NIRUPRES writes slide chapters as .chapters.json and .srt beside the recording.\n\n'
+            'Profiles: screen-mic, screen-camera and camera-mic. Edit them with niruclip --save-profile and choose the closest profile here.')
+
+    def start_talk(self,profile='screen-mic'):
+        if self.talk_session is not None:
+            self.statusBar().showMessage('Talk mode is already active',2500); return
+        if self.presenter is not None:
+            self.statusBar().showMessage('End the current presentation before starting Talk mode',2500); return
+        if not self.data.get('slides') or not any(not s.get('hidden',False) for s in self.data['slides']):
+            message_warning(self,'Talk mode','Add at least one visible slide before recording.'); return
+        self.talk_session=TalkSession(self.path,self.data.get("slides",[]),profile,parent=self)
+        self.talk_session.started.connect(self._talk_started)
+        self.talk_session.failed.connect(self._talk_failed)
+        self.talk_session.finished.connect(self._talk_finished)
+        self.statusBar().showMessage(f'Starting NIRUCLIP profile {profile}…')
+        if not self.talk_session.start():
+            self.talk_session=None
+
+    def _talk_started(self,recording):
+        if self.talk_session is None:return
+        self.present(True,talk=True)
+        if self.presenter is None:
+            self.talk_session.abort(); self.talk_session=None
+            message_critical(self,'Talk mode','The presentation could not start; recording was stopped.'); return
+        self.presenter.slideChanged.connect(self.talk_session.mark_slide)
+        self.presenter.finished.connect(self._talk_finish)
+        self.talk_session.mark_slide(max(0,self.presenter.i))
+        self.statusBar().showMessage(f'TALK recording · {recording}',4000)
+
+    def _talk_finish(self):
+        if self.talk_session is not None:
+            self.talk_session.finish()
+
+    def _talk_failed(self,message):
+        self.talk_session=None
+        if self.presenter is not None:
+            self.presenter.close_session()
+        message_critical(self,'Talk mode',message)
+
+    def _talk_finished(self,result):
+        self.talk_session=None
+        text=(f'Recording: {result.recording}\n'
+              f'Duration: {int(result.duration//60):02d}:{int(result.duration%60):02d}\n'
+              f'Chapters: {result.chapters}\n'
+              f'Subtitles: {result.subtitles}\n'
+              f'{len(result.markers)} slide marker(s)')
+        if result.warnings: text+='\n\n'+'\n'.join(result.warnings)
+        message_info(self,'Talk recording saved',text)
+        self.raise_(); self.activateWindow()
+
+    def closeEvent(self,event):
+        if self.talk_session is not None:
+            self.talk_session.abort(); self.talk_session=None
+        super().closeEvent(event)
+
     def set_side_panel(self,which,visible,from_toggle=False):
         panel=self.left_panel if which=='left' else self.right_panel
         toggle=self.showleft if which=='left' else self.showright
@@ -87,6 +157,32 @@ class Main(QMainWindow):
         # side panel can never become unreachable.
         toggle.setToolTip(('Hide ' if visible else 'Show ')+('Slides panel' if which=='left' else 'Inspector panel'))
 
+    def apply_chrome(self):
+        self.chrome_palette=chrome_theme.load_nirux_chrome() if self.chrome_follow else None
+        if self.chrome_palette is not None:
+            self.setStyleSheet(chrome_theme.chrome_style(STYLE,self.chrome_palette))
+        else:
+            self.setStyleSheet(STYLE)
+        if hasattr(self,'chrome_action'):
+            self.chrome_action.blockSignals(True); self.chrome_action.setChecked(self.chrome_follow); self.chrome_action.blockSignals(False)
+            self.chrome_action.setToolTip(chrome_theme.status_text(self.chrome_palette,self.chrome_follow)+' · slide themes stay independent')
+        if hasattr(self,'statusBar'):
+            self.statusBar().showMessage(chrome_theme.status_text(self.chrome_palette,self.chrome_follow),2200)
+    def set_chrome_follow(self,follow):
+        follow=bool(follow) and self.chrome_available
+        if follow==self.chrome_follow and self.chrome_palette is not None:
+            if hasattr(self,'chrome_action'):
+                self.chrome_action.blockSignals(True); self.chrome_action.setChecked(follow); self.chrome_action.blockSignals(False)
+            return
+        self.chrome_follow=follow; chrome_theme.write_follow_preference(follow); self.apply_chrome()
+    def _watch_chrome_files(self):
+        for path in chrome_theme.watch_paths():
+            if path.exists() and str(path) not in self.chrome_watcher.files(): self.chrome_watcher.addPath(str(path))
+    def refresh_chrome(self):
+        self.chrome_available=chrome_theme.detect_nirux()
+        if hasattr(self,'chrome_action'): self.chrome_action.setEnabled(self.chrome_available)
+        self.chrome_follow=self.chrome_follow and self.chrome_available
+        self.apply_chrome(); self._watch_chrome_files()
     def collapse_group(self,g,on):
         base=g.title().replace('▼  ','').replace('▶  ','')
         g.setTitle(('▼  ' if on else '▶  ')+base)
@@ -123,7 +219,7 @@ class Main(QMainWindow):
         self.title.setFocus();self.push_history()
     def command_palette(self):
         d=QDialog(self);d.setWindowTitle('NIRUPRES — Command Palette');d.resize(620,420);v=QVBoxLayout(d);q=QLineEdit();q.setPlaceholderText('Type a command…');v.addWidget(q);lst=QListWidget();v.addWidget(lst,1)
-        cmds=[('Add slide',self.add),('Duplicate slide',self.dup),('Delete selected slides',self.delete),('Copy slide',self.copy_slides),('Paste slide',self.paste_slides),('Add same layout',self.add_same_layout),('Deck settings',self.deck_settings),('File workflow settings',self.file_workflow_settings),('Import NIRUPRES Markdown',self.import_markdown),('Export NIRUPRES Markdown',self.export_markdown),('Export AI brief',self.export_ai_brief),('Copy AI prompt',self.copy_ai_prompt),('Export AI template',self.export_ai_template),('Deck health',self.validate_deck),('Asset manager',self.asset_manager),('Presentation overview',self.presentation_overview),('Export current slide to PNG',self.export_png),('Export all slides to PNG',self.export_all_png),('Export deck to PDF',self.export_pdf),('Export pixel-perfect PPTX',self.export_pptx),('Focus mode',self.toggle_focus),('Present from current',lambda:self.present(False)),('Present from beginning',lambda:self.present(True)),('Online presentation',lambda:self.online_present(False)),('Online presentation from beginning',lambda:self.online_present(True)),('Presentation check',self.presentation_check),('Selected slides · Logo AUTO',lambda:self.apply_to_selected('logoMode','AUTO')),('Selected slides · Logo ON',lambda:self.apply_to_selected('logoMode','ON')),('Selected slides · Logo OFF',lambda:self.apply_to_selected('logoMode','OFF')),('Selected slides · Accent AUTO',lambda:self.apply_to_selected('accentOverride','AUTO')),('Selected slides · Accent BLUE',lambda:self.apply_to_selected('accentOverride','BLUE')),('Selected slides · Accent GREEN',lambda:self.apply_to_selected('accentOverride','GREEN')),('Selected slides · Accent YELLOW',lambda:self.apply_to_selected('accentOverride','YELLOW')),('Selected slides · Accent RED',lambda:self.apply_to_selected('accentOverride','RED')),('Selected slides · Accent PINK',lambda:self.apply_to_selected('accentOverride','PINK')),('Selected slides · Accent PURPLE',lambda:self.apply_to_selected('accentOverride','PURPLE')),('Save',self.save),('Save as',self.save_as),('Open',self.open),('About / diagnostics',self.about)]
+        cmds=[('Add slide',self.add),('Duplicate slide',self.dup),('Delete selected slides',self.delete),('Copy slide',self.copy_slides),('Paste slide',self.paste_slides),('Add same layout',self.add_same_layout),('Deck settings',self.deck_settings),('File workflow settings',self.file_workflow_settings),('Import NIRUPRES Markdown',self.import_markdown),('Export NIRUPRES Markdown',self.export_markdown),('Export AI brief',self.export_ai_brief),('Copy AI prompt',self.copy_ai_prompt),('Export AI template',self.export_ai_template),('Deck health',self.validate_deck),('Asset manager',self.asset_manager),('Presentation overview',self.presentation_overview),('Export current slide to PNG',self.export_png),('Export all slides to PNG',self.export_all_png),('Export deck to PDF',self.export_pdf),('Export pixel-perfect PPTX',self.export_pptx),('Focus mode',self.toggle_focus),('Editor chrome · Follow NIRUX',lambda:self.set_chrome_follow(True)),('Editor chrome · Noir',lambda:self.set_chrome_follow(False)),('Talk · screen + microphone',lambda:self.start_talk('screen-mic')),('Talk · screen + camera',lambda:self.start_talk('screen-camera')),('Talk · camera + microphone',lambda:self.start_talk('camera-mic')),('Present from current',lambda:self.present(False)),('Present from beginning',lambda:self.present(True)),('Online presentation',lambda:self.online_present(False)),('Online presentation from beginning',lambda:self.online_present(True)),('Presentation check',self.presentation_check),('Selected slides · Logo AUTO',lambda:self.apply_to_selected('logoMode','AUTO')),('Selected slides · Logo ON',lambda:self.apply_to_selected('logoMode','ON')),('Selected slides · Logo OFF',lambda:self.apply_to_selected('logoMode','OFF')),('Selected slides · Accent AUTO',lambda:self.apply_to_selected('accentOverride','AUTO')),('Selected slides · Accent BLUE',lambda:self.apply_to_selected('accentOverride','BLUE')),('Selected slides · Accent GREEN',lambda:self.apply_to_selected('accentOverride','GREEN')),('Selected slides · Accent YELLOW',lambda:self.apply_to_selected('accentOverride','YELLOW')),('Selected slides · Accent RED',lambda:self.apply_to_selected('accentOverride','RED')),('Selected slides · Accent PINK',lambda:self.apply_to_selected('accentOverride','PINK')),('Selected slides · Accent PURPLE',lambda:self.apply_to_selected('accentOverride','PURPLE')),('Save',self.save),('Save as',self.save_as),('Open',self.open),('About / diagnostics',self.about)]
         def fill():
             term=q.text().lower().strip();lst.clear()
             for name,fn in cmds:
@@ -201,6 +297,7 @@ class Main(QMainWindow):
               f'Platform: {platform.system()} {platform.release()}\n'
               f'Session: {os.environ.get("XDG_SESSION_TYPE","unknown")} · Wayland: {os.environ.get("WAYLAND_DISPLAY","-")}\n'
               f'Desktop: {os.environ.get("XDG_CURRENT_DESKTOP","unknown")} · Portal: {os.environ.get("XDG_DESKTOP_PORTAL_DIR","auto")}\n'
+              f'Editor chrome: {chrome_theme.status_text(self.chrome_palette,self.chrome_follow)}\n'
               f'Screens:\n{screens}')
         d=QDialog(self); d.setWindowTitle(f'About {APP}'); d.resize(650,470); v=QVBoxLayout(d)
         title=QLabel('NIRUPRES'); title.setObjectName('aboutTitle'); v.addWidget(title); tag=QLabel(TAGLINE); tag.setWordWrap(True); tag.setObjectName('aboutTag'); v.addWidget(tag)
@@ -274,6 +371,14 @@ class Main(QMainWindow):
         p=self.recent.itemData(idx)
         if p:self.open_path(p)
         self.recent.setCurrentIndex(0)
+    def load_cli(self,path):
+        candidate=tempfile.TemporaryDirectory(prefix='nirupres-cli-')
+        try:
+            data=load_project(path,candidate.name)
+        except Exception as error:
+            candidate.cleanup(); raise
+        old=self.extract; self.extract=candidate; self.data=data; self.path=Path(path); self.dirty=False; self.state.setText(''); self.history=[]; self.history_pos=-1
+        self.refresh(); self.push_history(); self.clear_autosave(); self.add_recent(str(path)); old.cleanup()
     def open_path(self,p):
         if not self.confirm_discard():return
         candidate=tempfile.TemporaryDirectory(prefix='nirupres-')
@@ -485,7 +590,11 @@ class Main(QMainWindow):
         p,_=QFileDialog.getSaveFileName(self,'Export PDF',self._dialog_start('presentation.pdf'),'PDF (*.pdf)')
         if not p:return
         self._remember_dialog(p)
-        p=p if p.endswith('.pdf') else p+'.pdf'; writer=QPdfWriter(p);writer.setPageSize(QPageSize(QPageSize.A4));writer.setPageOrientation(QPageLayout.Landscape);writer.setResolution(144); painter=QPainter(writer)
+        self.export_pdf_to(p)
+        self.statusBar().showMessage(f'PDF exported: {p if p.endswith(".pdf") else p+".pdf"}',3000)
+    def export_pdf_to(self,p):
+        p=str(p) if str(p).lower().endswith('.pdf') else str(p)+'.pdf'
+        writer=QPdfWriter(p);writer.setPageSize(QPageSize(QPageSize.A4));writer.setPageOrientation(QPageLayout.Landscape);writer.setResolution(144); painter=QPainter(writer)
         try:
             for i,s in enumerate(self.data['slides']):
                 if i:writer.newPage()
@@ -494,7 +603,7 @@ class Main(QMainWindow):
                 else:nh=page.width()/ar;r=QRectF(0,(page.height()-nh)/2,page.width(),nh)
                 painter.fillRect(page,QColor(THEMES[self.data['theme']]['bg']));render_slide(painter,r,s,self.data['theme'],i,len(self.data['slides']),self.data.get('showNumbers',False),self.data.get('fontFamily','Noto Sans'),self.data.get('showLogo',True),self.data.get('footerText',''),self.data.get('footerAlign','LEFT'),self.data.get('footerSize','MEDIUM'))
         finally:painter.end()
-        self.statusBar().showMessage(f'PDF exported: {p}',3000)
+        return p
     def autosave(self):
         if not self.dirty:return
         try:
@@ -607,7 +716,7 @@ class Main(QMainWindow):
         bb=neutralize_button_box(QDialogButtonBox(QDialogButtonBox.Close));bb.rejected.connect(d.reject);v.addWidget(bb);d.exec()
     def _presentation_finished(self):
         self.presenter=None; self.show(); self.raise_(); self.activateWindow(); self.setFocus(Qt.OtherFocusReason)
-    def present(self,from_start=False,presenter_screen=None,audience_screen=None,online=False):
+    def present(self,from_start=False,presenter_screen=None,audience_screen=None,online=False,talk=False):
         if self.presenter is not None:
             self.presenter.close_session(); self.presenter=None
         slides=self.data.get('slides',[])
@@ -623,7 +732,7 @@ class Main(QMainWindow):
             try:prefs=json.loads(DISPLAY_PREFS.read_text(encoding='utf-8')) if DISPLAY_PREFS.exists() else {}
             except:pass
             audience_screen=next((x for x in screens if x.name()==prefs.get('audience')),None) or next((x for x in screens if x!=presenter_screen),presenter_screen)
-        self.presenter=Presenter(self.data,start,presenter_screen,audience_screen,online=online); self.presenter.finished.connect(self._presentation_finished)
+        self.presenter=Presenter(self.data,start,presenter_screen,audience_screen,online=online,talk=talk); self.presenter.finished.connect(self._presentation_finished)
 
 ASSET_DIR=Path(__file__).resolve().parent/'assets'
 CHEVRON=(ASSET_DIR/'chevron-down.svg').as_posix()
@@ -666,6 +775,56 @@ QMessageBox{background:#080808} QMessageBox QLabel{color:#d8d8d8;min-width:260px
 QToolBar{spacing:4px;border-bottom:1px solid #242424;padding:5px;background:#0d0d0d}
 '''
 STYLE=STYLE.replace('__CHECKMARK__',CHECKMARK).replace('__CHEVRON__',CHEVRON)
+def _cli(argv):
+    if not argv:
+        return None
+    if argv[0] in ('--version','-V'):
+        print(f'{APP} {VERSION}'); return 0
+    if argv[0] in ('--help','-h'):
+        print(f'NIRUPRES {VERSION}\n'
+              'Usage: nirupres [--present FILE] [--talk FILE [PROFILE]] [--export-pdf FILE [OUTPUT]] [--check-config] [--version]\n\n'
+              'The graphical editor opens when no command is given. Talk mode is available\n'
+              'from the TALK menu and uses NIRUCLIP profiles screen-mic, screen-camera or\n'
+              'camera-mic.')
+        return 0
+    if argv[0]=='--check-config':
+        chrome=chrome_theme.load_nirux_chrome()
+        print(f'{APP} {VERSION}'); print(f'data: {DATA}'); print(f'chrome: {chrome_theme.status_text(chrome, chrome is not None)}'); print(f'format: {FORMAT}; markdown: {MD_FORMAT}'); print('configuration: OK')
+        return 0
+    if argv[0]=='--present':
+        if len(argv)!=2: print('nirupres: --present needs a project file',file=sys.stderr); return 2
+        path=Path(argv[1]).expanduser()
+        if not path.is_file(): print(f'nirupres: project not found: {path}',file=sys.stderr); return 2
+        app=QApplication([APP]); app.setApplicationName(APP); app.setApplicationVersion(VERSION); app.setOrganizationName('Nicklas Rudolfsson'); icon=QIcon(str(ASSETS/'nirupres.svg')); app.setWindowIcon(icon)
+        w=Main(); w.setWindowIcon(icon)
+        try: w.load_cli(path)
+        except Exception as error: print(f'nirupres: cannot open {path}: {error}',file=sys.stderr); return 1
+        w.show(); w.present(True); return app.exec()
+    if argv[0]=='--talk':
+        if len(argv)<2: print('nirupres: --talk needs a project file',file=sys.stderr); return 2
+        path=Path(argv[1]).expanduser(); profile=argv[2] if len(argv)>2 else 'screen-mic'
+        if not path.is_file(): print(f'nirupres: project not found: {path}',file=sys.stderr); return 2
+        app=QApplication([APP]); app.setApplicationName(APP); app.setApplicationVersion(VERSION); app.setOrganizationName('Nicklas Rudolfsson'); icon=QIcon(str(ASSETS/'nirupres.svg')); app.setWindowIcon(icon)
+        w=Main(); w.setWindowIcon(icon)
+        try: w.load_cli(path)
+        except Exception as error: print(f'nirupres: cannot open {path}: {error}',file=sys.stderr); return 1
+        w.show(); w.start_talk(profile); return app.exec()
+    if argv[0]=='--export-pdf':
+        if len(argv)<2: print('nirupres: --export-pdf needs a project file',file=sys.stderr); return 2
+        source=Path(argv[1]).expanduser()
+        if not source.is_file(): print(f'nirupres: project not found: {source}',file=sys.stderr); return 2
+        target=Path(argv[2]).expanduser() if len(argv)>2 else source.with_suffix('.pdf')
+        os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+        app=QApplication([APP]); app.setApplicationName(APP); app.setApplicationVersion(VERSION); app.setOrganizationName('Nicklas Rudolfsson')
+        w=Main()
+        try: w.load_cli(source)
+        except Exception as error: print(f'nirupres: cannot open {source}: {error}',file=sys.stderr); return 1
+        written=w.export_pdf_to(target); w.close(); print(f'PDF exported: {written}'); return 0
+    print(f'nirupres: unknown option: {argv[0]}',file=sys.stderr); return 2
+
 def run():
+    code=_cli(sys.argv[1:])
+    if code is not None:
+        raise SystemExit(code)
     app=QApplication(sys.argv);app.setApplicationName(APP);app.setApplicationVersion(VERSION);app.setOrganizationName('Nicklas Rudolfsson'); icon=QIcon(str(ASSETS/'nirupres.svg')); app.setWindowIcon(icon); w=Main(); w.setWindowIcon(icon);w.show();sys.exit(app.exec())
 if __name__=='__main__':run()

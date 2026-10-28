@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QSize, Signal, QRectF, QElapsedTimer, QEv
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QPixmap, QPainter, QColor, QFont, QFontMetrics, QFontDatabase, QPdfWriter, QPageSize, QPageLayout, QImage, QImageReader, QIcon, QTextDocument, QAbstractTextDocumentLayout, QPainterPath
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QListWidget,QListWidgetItem,QLineEdit,QTextEdit,QComboBox,QPushButton,QLabel,QFileDialog,QSplitter,QMessageBox,QToolBar,QCheckBox,QDialog,QGridLayout,QDialogButtonBox,QGraphicsScene,QGraphicsPixmapItem,QGraphicsBlurEffect,QSlider,QGroupBox,QFormLayout,QMenu,QInputDialog,QGraphicsOpacityEffect)
 
-APP='NIRUPRES'; VERSION='2.0.0'; FORMAT=9; MD_FORMAT=2
+APP='NIRUPRES'; VERSION='2.1.0'; FORMAT=9; MD_FORMAT=2
 TAGLINE='A minimal, suckless presentation app by Nicklas Rudolfsson.'
 MB=1024*1024
 MAX_PROJECT_JSON=5*MB
@@ -21,7 +21,7 @@ IMAGE_CACHE_BUDGET=192*MB
 MAX_HISTORY_BYTES=24*MB
 EXPORT_PROFILES={'preview':(1920,1080),'pptx':(2560,1440)}
 _IMAGE_CACHE=OrderedDict(); _IMAGE_CACHE_BYTES=0
-DATA=Path.home()/'.local/share/nirupres'; AUTOSAVE=DATA/'autosave.json'; RECENTS=DATA/'recent.json'; DISPLAY_PREFS=DATA/'display.json'
+DATA=(Path(os.environ.get("XDG_DATA_HOME") or (Path.home()/".local/share"))/"nirupres"); AUTOSAVE=DATA/'autosave.json'; RECENTS=DATA/'recent.json'; DISPLAY_PREFS=DATA/'display.json'
 ASSETS=Path(__file__).resolve().parent/'assets'; BRANDING=ASSETS/'branding'; FILE_PREFS=DATA/'file-workflow.json'
 THEMES={
  'B&W': {'bg':'#050505','fg':'#F4F2ED','muted':'#969696','accent':'#F4F2ED','rule':'#2A2A2A','imageMono':True},

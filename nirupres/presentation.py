@@ -413,8 +413,9 @@ class DisplaySetup(QDialog):
 
 class Presenter(QMainWindow):
     finished=Signal()
-    def __init__(self,data,start=0,presenter_screen=None,audience_screen=None,online=False):
-        super().__init__(); self.data=data; self.online=online; self._closing=False; self._black_hold=False; self.curtain=False; self.paused=False; self._paused_total_ms=0; self._pause_started_ms=None; self.jump=''; self.blank=None; self.clock=QElapsedTimer(); self.clock.start(); self.setFocusPolicy(Qt.StrongFocus)
+    slideChanged=Signal(int)
+    def __init__(self,data,start=0,presenter_screen=None,audience_screen=None,online=False,talk=False):
+        super().__init__(); self.data=data; self.online=online; self.talk=talk; self.talk_stop=None; self._closing=False; self._black_hold=False; self.curtain=False; self.paused=False; self._paused_total_ms=0; self._pause_started_ms=None; self.jump=''; self.blank=None; self.clock=QElapsedTimer(); self.clock.start(); self.setFocusPolicy(Qt.StrongFocus)
         screens=QApplication.screens(); primary=QApplication.primaryScreen(); presenter_screen=presenter_screen or primary; audience_screen=audience_screen or next((x for x in screens if x!=presenter_screen),presenter_screen)
         self.presenter_screen=presenter_screen; self.audience_screen=audience_screen; self.i=self._nearest_visible(start,1)
         QApplication.instance().screenRemoved.connect(self._screen_removed)
@@ -431,6 +432,15 @@ class Presenter(QMainWindow):
             self.audience.setGeometry(ax,ay,aw,ah); self.audience.setMinimumSize(640,360); self.audience.show()
         else:
             self.audience.setGeometry(audience_screen.geometry()); self.audience.showFullScreen()
+        if talk:
+            stop=QPushButton('■  STOP TALK',self.audience.view)
+            stop.setObjectName('talkStop')
+            stop.setStyleSheet('QPushButton#talkStop{background:rgba(8,8,8,220);color:#f4f2ed;border:1px solid #777;padding:8px 14px;font-weight:800;letter-spacing:1px} QPushButton#talkStop:hover{background:#282828;border-color:#fff}')
+            stop.setFixedSize(172,38); stop.clicked.connect(self.close_session); stop.raise_(); stop.show(); self.talk_stop=stop
+            def place_stop():
+                if self.talk_stop is not None and self.audience.isVisible():
+                    self.talk_stop.move(max(16,self.audience.width()-self.talk_stop.width()-20),max(16,self.audience.height()-self.talk_stop.height()-20)); self.talk_stop.raise_()
+            QTimer.singleShot(220,place_stop); QTimer.singleShot(900,place_stop)
         self.dual=online or (len(screens)>1 and presenter_screen!=audience_screen)
         if self.data.get('cinematicOpen',True) and not self.data.get('reduceMotion',False): self.audience.begin_opening()
         if not self.dual:
@@ -544,6 +554,8 @@ class Presenter(QMainWindow):
             notes=s.get('notes','').strip(); self.notes.setPlainText(notes); self.notes.setVisible(bool(notes)); self.notes_label.setVisible(bool(notes))
             ni=self._next_visible(self.i,1); self.next.render(self.data['slides'][ni],self.data.get('theme','B&W'),ni,total,False,self.data.get('fontFamily','Noto Sans'),self.data.get('aspect','16:9'),self.data.get('showLogo',True),self.data.get('footerText',''),self.data.get('footerAlign','LEFT'),self.data.get('footerSize','MEDIUM'))
         self.audience.set_index(self.i)
+        if getattr(self,'_marker_slide',None)!=self.i:
+            self._marker_slide=self.i; self.slideChanged.emit(self.i)
     def navigate(self,d):
         if d==-999:self.i=self._nearest_visible(0,1)
         elif d==999:self.i=self._nearest_visible(len(self.data['slides'])-1,-1)

@@ -1,14 +1,17 @@
 #!/bin/sh
 set -eu
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-DEST="$HOME/.local/share/nirupres"
+DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
+DEST="$DATA_ROOT/nirupres"
 BIN_DIR="$HOME/.local/bin"
 BIN="$BIN_DIR/nirupres"
-APP_DIR="$HOME/.local/share/applications"
+APP_DIR="$DATA_ROOT/applications"
 DESKTOP="$APP_DIR/nirupres.desktop"
-ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+ICON_DIR="$DATA_ROOT/icons/hicolor/scalable/apps"
+MIME_DIR="$DATA_ROOT/mime/packages"
+MIME="$MIME_DIR/nirupres.xml"
 ICON="$ICON_DIR/nirupres.svg"
 VENV="$DEST/.venv"
 STAGE=""
@@ -20,7 +23,7 @@ cleanup() { [ -z "$STAGE" ] || [ ! -d "$STAGE" ] || rm -rf -- "$STAGE"; [ -z "$B
 restore() {
     [ -n "$BACKUP" ] && [ -d "$BACKUP" ] || return 0
     rm -rf -- "$DEST/nirupres" "$DEST/tests"
-    rm -f -- "$DEST/run.sh" "$DEST/requirements.txt" "$BIN" "$DESKTOP" "$ICON"
+    rm -f -- "$DEST/run.sh" "$DEST/requirements.txt" "$BIN" "$DESKTOP" "$ICON" "$MIME"
     [ ! -d "$BACKUP/nirupres" ] || mv -- "$BACKUP/nirupres" "$DEST/nirupres"
     [ ! -d "$BACKUP/tests" ] || mv -- "$BACKUP/tests" "$DEST/tests"
     [ ! -f "$BACKUP/run.sh" ] || mv -- "$BACKUP/run.sh" "$DEST/run.sh"
@@ -28,6 +31,7 @@ restore() {
     [ ! -f "$BACKUP/nirupres-bin" ] || mv -- "$BACKUP/nirupres-bin" "$BIN"
     [ ! -f "$BACKUP/nirupres.desktop" ] || mv -- "$BACKUP/nirupres.desktop" "$DESKTOP"
     [ ! -f "$BACKUP/nirupres.svg" ] || { mkdir -p -- "$ICON_DIR"; mv -- "$BACKUP/nirupres.svg" "$ICON"; }
+    [ ! -f "$BACKUP/nirupres.xml" ] || { mkdir -p -- "$MIME_DIR"; mv -- "$BACKUP/nirupres.xml" "$MIME"; }
 }
 abort_install() { msg=$1; restore || true; fail "$msg"; }
 trap cleanup EXIT HUP INT TERM
@@ -39,7 +43,7 @@ shell_name=${SHELL##*/}; [ -n "$shell_name" ] || shell_name="unknown"
 printf 'NIRUPRES %s Release Gate installer\n\n' "$VERSION"
 printf 'System\n  OS ............. %s\n  Shell .......... %s\n' "$os_name" "$shell_name"
 command -v python3 >/dev/null 2>&1 || fail "python3 was not found in PATH."
-mkdir -p -- "$HOME/.local/share" "$BIN_DIR" "$APP_DIR" "$ICON_DIR" "$DEST" || fail "Could not create install directories."
+mkdir -p -- "$DATA_ROOT" "$BIN_DIR" "$APP_DIR" "$ICON_DIR" "$MIME_DIR" "$DEST" || fail "Could not create install directories."
 if [ -x "$VENV/bin/python" ] && [ -f "$DEST/nirupres/__init__.py" ]; then OLD_VERSION=$( (cd / && PYTHONPATH="$DEST" "$VENV/bin/python" -c 'import nirupres; print(nirupres.__version__)') 2>/dev/null || printf unknown); fi
 printf '  Installed ...... %s\n  Target ......... %s\n\n' "$OLD_VERSION" "$VERSION"
 
@@ -59,7 +63,8 @@ fi
 
 printf '[3/6] Staging and validating release...\n'
 STAGE=$(mktemp -d "$HOME/.local/share/.nirupres-stage.XXXXXX") || fail "Could not create staging directory."
-cp -R -- "$SRC/nirupres" "$SRC/tests" "$SRC/run.sh" "$SRC/requirements.txt" "$STAGE/" || fail "Could not stage release."
+cp -R -- "$SRC/nirupres" "$SRC/tests" "$SRC/run.sh" "$SRC/requirements.txt" "$STAGE/"
+cp -- "$SRC/mime/nirupres.xml" "$STAGE/nirupres.xml" || fail "Could not stage release."
 "$VENV/bin/python" -m compileall -q "$STAGE/nirupres" "$STAGE/tests" || fail "Staged release failed Python compilation."
 staged_version=$(cd / && PYTHONPATH="$STAGE" "$VENV/bin/python" -c 'import nirupres; print(nirupres.__version__)') || fail "Could not read staged version."
 [ "$staged_version" = "$VERSION" ] || fail "Staged version is $staged_version, expected $VERSION."
@@ -74,6 +79,7 @@ BACKUP=$(mktemp -d "$HOME/.local/share/.nirupres-backup.XXXXXX") || fail "Could 
 [ ! -f "$BIN" ] || cp -p -- "$BIN" "$BACKUP/nirupres-bin"
 [ ! -f "$DESKTOP" ] || cp -p -- "$DESKTOP" "$BACKUP/nirupres.desktop"
 [ ! -f "$ICON" ] || cp -p -- "$ICON" "$BACKUP/nirupres.svg"
+[ ! -f "$MIME" ] || cp -p -- "$MIME" "$BACKUP/nirupres.xml"
 
 printf '[5/6] Installing transactionally...\n'
 if ! mv -- "$STAGE/nirupres" "$DEST/nirupres" || ! mv -- "$STAGE/tests" "$DEST/tests" || ! cp -- "$STAGE/run.sh" "$STAGE/requirements.txt" "$DEST/"; then abort_install "Could not install release; previous managed files were restored."; fi
@@ -84,15 +90,20 @@ exec "$DEST/run.sh" "\$@"
 EOF
 chmod +x -- "$BIN"
 cp -- "$DEST/nirupres/assets/nirupres.svg" "$ICON" || abort_install "Could not install application icon; previous managed files were restored."
+cp -- "$STAGE/nirupres.xml" "$MIME" || abort_install "Could not install MIME metadata; previous managed files were restored."
+command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$DATA_ROOT/mime" >/dev/null 2>&1 || :
 cat > "$DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application
 Name=NIRUPRES
-Comment=Minimal, suckless presentation app by Nicklas Rudolfsson
-Exec=$BIN
+Comment=Minimal presentation studio with NIRUX editor chrome and talk recording
+Exec=$BIN %f
+TryExec=$BIN
 Terminal=false
 Icon=$ICON
 Categories=Office;Presentation;
+MimeType=application/x-nirupres;
+Keywords=presentation;slides;deck;pdf;record;talk;
 EOF
 
 printf '[6/6] Verifying installed release...\n'
@@ -101,7 +112,8 @@ installed_version=$( (cd / && PYTHONPATH="$DEST" "$VENV/bin/python" -c 'import n
 [ "$installed_version" = "$VERSION" ] || abort_install "Installed version is $installed_version, expected $VERSION; previous managed files were restored."
 if ! QT_QPA_PLATFORM=offscreen PYTHONPATH="$DEST" "$VENV/bin/python" "$DEST/tests/release_gate.py"; then abort_install "Post-install release gate failed; previous managed files were restored."; fi
 # Validate the launcher from an unrelated cwd: this protects the UWSM/desktop regression.
-( cd /tmp && test -x "$BIN" && test -s "$ICON" && grep -F 'Icon=' "$DESKTOP" >/dev/null && grep -F 'cd "$ROOT"' "$DEST/run.sh" >/dev/null ) || abort_install "Launcher validation failed; previous managed files were restored."
+( cd /tmp && test -x "$BIN" && test -s "$ICON" && test -s "$MIME" && grep -F 'Icon=' "$DESKTOP" >/dev/null && grep -F 'MimeType=application/x-nirupres' "$DESKTOP" >/dev/null && grep -F 'cd "$ROOT"' "$DEST/run.sh" >/dev/null ) || abort_install "Launcher validation failed; previous managed files were restored."
+QT_QPA_PLATFORM=offscreen "$BIN" --version >/dev/null || abort_install "Installed CLI failed --version; previous managed files were restored."
 
 rm -rf -- "$BACKUP"; BACKUP=""; rm -rf -- "$STAGE"; STAGE=""; trap - EXIT HUP INT TERM
 printf '\nNIRUPRES %s installed successfully.\n' "$VERSION"
