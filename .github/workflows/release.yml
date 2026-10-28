@@ -17,23 +17,23 @@ jobs:
           version=$(sed -n 's/^VERSION="\(.*\)"/\1/p' install.sh | head -1)
           test "v$version" = "${GITHUB_REF_NAME}"
           test "$(sed -n 's/^__version__ = "\(.*\)"/\1/p' nirupres/__init__.py)" = "$version"
-          test "$(awk -F "'" '/APP=.*VERSION/ {for (i=1;i<=NF;i++) if ($i ~ /^2\\./) print $i; exit}' nirupres/foundation.py)" = "$version"
+          test "$(grep -o "VERSION='[0-9.]*'" nirupres/foundation.py | head -1 | cut -d"'" -f2)" = "$version"
       - run: pip install -r requirements.txt
       - run: python3 -m compileall -q nirupres tests
       - run: QT_QPA_PLATFORM=offscreen python3 tests/release_gate.py
       - name: Package release
         run: |
           rm -rf dist build
-          mkdir -p dist/nirupres-2.1.0
-          cp -R nirupres tests mime dist/nirupres-2.1.0/
-          cp install.sh run.sh requirements.txt README.md CHANGELOG.md UPGRADE.md SECURITY.md LICENSE NIRUPRES-AI-GUIDE.md dist/nirupres-2.1.0/
-          (cd dist && zip -qr "NIRUPRES-2.1.0.zip" nirupres-2.1.0)
-          (cd dist && sha256sum "NIRUPRES-2.1.0.zip" install.sh > SHA256SUMS)
+          mkdir -p dist/nirupres-2.1.1
+          cp -R nirupres tests mime dist/nirupres-2.1.1/
+          cp install.sh run.sh requirements.txt README.md CHANGELOG.md UPGRADE.md SECURITY.md LICENSE NIRUPRES-AI-GUIDE.md dist/nirupres-2.1.1/
+          (cd dist && zip -qr "NIRUPRES-2.1.1.zip" nirupres-2.1.1)
+          (cd dist && sha256sum "NIRUPRES-2.1.1.zip" install.sh > SHA256SUMS)
           cp install.sh dist/
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/NIRUPRES-2.1.0.zip
+            dist/NIRUPRES-2.1.1.zip
             dist/install.sh
             dist/SHA256SUMS
           make_latest: true

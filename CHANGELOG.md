@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.1 — release identity fix
+
+- Keeps the 2.1 feature set and fixes the tagged release identity check.
+
 ## 2.1.0 — NIRUX-native presentation workflow
 
 - Added XDG data paths, noninteractive CLI (`--present`, `--talk`,

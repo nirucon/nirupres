@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QSize, Signal, QRectF, QElapsedTimer, QEv
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QPixmap, QPainter, QColor, QFont, QFontMetrics, QFontDatabase, QPdfWriter, QPageSize, QPageLayout, QImage, QImageReader, QIcon, QTextDocument, QAbstractTextDocumentLayout, QPainterPath
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QListWidget,QListWidgetItem,QLineEdit,QTextEdit,QComboBox,QPushButton,QLabel,QFileDialog,QSplitter,QMessageBox,QToolBar,QCheckBox,QDialog,QGridLayout,QDialogButtonBox,QGraphicsScene,QGraphicsPixmapItem,QGraphicsBlurEffect,QSlider,QGroupBox,QFormLayout,QMenu,QInputDialog,QGraphicsOpacityEffect)
 
-APP='NIRUPRES'; VERSION='2.1.0'; FORMAT=9; MD_FORMAT=2
+APP='NIRUPRES'; VERSION='2.1.1'; FORMAT=9; MD_FORMAT=2
 TAGLINE='A minimal, suckless presentation app by Nicklas Rudolfsson.'
 MB=1024*1024
 MAX_PROJECT_JSON=5*MB
