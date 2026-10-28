@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="2.1.1"
+VERSION="2.1.2"
 SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEST="$DATA_ROOT/nirupres"

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.2 — release packaging fix
+
+- Keeps the 2.1 feature set; release CI installs the EGL/XKB runtime needed by Qt.
+
 ## 2.1.1 — release identity fix
 
 - Keeps the 2.1 feature set and fixes the tagged release identity check.
