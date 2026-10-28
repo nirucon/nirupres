@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.4 — release packaging fix
+
+- Keeps the 2.1 feature set; the release archive includes install.sh before checksumming.
+
 ## 2.1.3 — release test path fix
 
 - Keeps the 2.1 feature set; the release gate imports the checkout explicitly.
