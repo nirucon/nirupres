@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.3 — release test path fix
+
+- Keeps the 2.1 feature set; the release gate imports the checkout explicitly.
+
 ## 2.1.2 — release packaging fix
 
 - Keeps the 2.1 feature set; release CI installs the EGL/XKB runtime needed by Qt.
