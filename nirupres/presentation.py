@@ -494,6 +494,9 @@ class PresenterFocusOverlay(QWidget):
         q.end()
 
 
+KEN_BURNS_MS = 18000.0
+
+
 def _web_video_url(url):
     url = str(url or "").strip()
     m = re.search(r"(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{6,})", url)
@@ -514,9 +517,11 @@ class PresenterPauseOverlay(QWidget):
         self._seconds = 0
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # One wake-up per displayed second, aligned to the elapsed clock. The
+        # 2.1 overlay repainted the full-screen veil every 100 ms.
         self._tick = QTimer(self)
         self._tick.setTimerType(Qt.TimerType.PreciseTimer)
-        self._tick.setInterval(100)
+        self._tick.setSingleShot(True)
         self._tick.timeout.connect(self._update_time)
         self._opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity)
@@ -527,7 +532,7 @@ class PresenterPauseOverlay(QWidget):
     def start_pause(self):
         self._seconds = 0
         self._clock.restart()
-        self._tick.start()
+        self._schedule_tick()
         self.show()
         self.raise_()
         self._animate_opacity(1.0, 380)
@@ -560,9 +565,16 @@ class PresenterPauseOverlay(QWidget):
             return 0
         return max(0, self._clock.elapsed() // 1000)
 
+    def _schedule_tick(self):
+        elapsed = self._clock.elapsed() if self._clock.isValid() else 0
+        self._tick.start(max(20, 1000 - elapsed % 1000 + 5))
+
     def _update_time(self):
-        self._seconds = self.elapsed_seconds()
-        self.update()
+        sec = self.elapsed_seconds()
+        if sec != self._seconds:
+            self._seconds = sec
+            self.update()
+        self._schedule_tick()
 
     def paintEvent(self, event):
         q = QPainter(self)
@@ -617,7 +629,9 @@ class Audience(QMainWindow):
         self._motion_timer.setInterval(40)
         self._motion_timer.timeout.connect(self.draw)
         self._motion_clock.start()
-        self._motion_timer.start()
+        # 2.2 (U3): the 25 fps redraw runs only while a KEN BURNS background is
+        # actually moving and visible; it used to repaint every slide forever.
+        self._curtain_on = False
         self.setWindowTitle("NIRUPRES — Audience" + (" · SHARE THIS WINDOW" if online else ""))
         self._opening = False
         self._curtain = None
@@ -637,6 +651,7 @@ class Audience(QMainWindow):
         if not online:
             self._cursor_timer.start()
         self.draw()
+        self._update_motion_timer()
 
     def draw(self):
         if self.blank is not None:
@@ -653,7 +668,9 @@ class Audience(QMainWindow):
                 self._motion_slide_key = motion_key
                 self._motion_clock.restart()
             render_slide_data = clone(slide)
-            phase = min(1.0, self._motion_clock.elapsed() / 18000.0)
+            phase = min(1.0, self._motion_clock.elapsed() / KEN_BURNS_MS)
+            if phase >= 1.0 and self._motion_timer.isActive():
+                self._motion_timer.stop()
             ease = phase * phase * (3.0 - 2.0 * phase)
             direction = -1.0 if (sum(ord(c) for c in motion_key) % 2) else 1.0
             drift = (ease - 0.5) * 0.12 * direction
@@ -684,6 +701,25 @@ class Audience(QMainWindow):
         self.pause_overlay.setGeometry(self.view.rect())
         if self._paused:
             self.pause_overlay.raise_()
+
+    def _motion_wanted(self):
+        if self.blank is not None or self._paused or self._curtain_on:
+            return False
+        if self.data.get("reduceMotion", False):
+            return False
+        slide = self.data["slides"][self.i]
+        return (
+            bool(slide.get("backgroundImage"))
+            and slide.get("backgroundMotion") == "KEN BURNS"
+            and self._motion_clock.elapsed() < KEN_BURNS_MS
+        )
+
+    def _update_motion_timer(self):
+        if self._motion_wanted():
+            if not self._motion_timer.isActive():
+                self._motion_timer.start()
+        elif self._motion_timer.isActive():
+            self._motion_timer.stop()
 
     def _clear_video(self):
         if self._video_player is not None:
@@ -804,6 +840,7 @@ class Audience(QMainWindow):
         self.i = new_i
         self._motion_clock.restart()
         self.draw()
+        self._update_motion_timer()
         if old_pm is None or old_pm.isNull() or mode == "NONE":
             return
         self.transition_engine.animate(old_pm, mode)
@@ -820,11 +857,13 @@ class Audience(QMainWindow):
             self.setStyleSheet("")
             self.view.show()
             self.draw()
+        self._update_motion_timer()
 
     def begin_opening(self):
         self._opening = True
         self._motion_clock.restart()
         self.draw()
+        self._update_motion_timer()
         self.transition_engine.opening(self.finish_opening)
 
     def finish_opening(self):
@@ -910,12 +949,11 @@ class Audience(QMainWindow):
             self._curtain.setGeometry(self.view.rect())
             self._curtain.show()
             self._curtain.raise_()
-            self._motion_timer.stop()
         else:
             if self._curtain is not None:
                 self._curtain.hide()
-            if not self._motion_timer.isActive():
-                self._motion_timer.start()
+        self._curtain_on = bool(on)
+        self._update_motion_timer()
         self.focus_overlay.raise_()
 
     def set_pause(self, on):
@@ -924,7 +962,7 @@ class Audience(QMainWindow):
             return
         self._paused = on
         if on:
-            self._motion_timer.stop()
+            self._update_motion_timer()
             # Local video is genuinely paused and resumes only if it was playing.
             self._pause_video_was_playing = False
             if self._video_player is not None:
@@ -966,11 +1004,7 @@ class Audience(QMainWindow):
                     pass
             self._pause_video_was_playing = False
             self._pause_web_audio_muted = None
-            if (
-                not (self._curtain is not None and self._curtain.isVisible())
-                and not self._motion_timer.isActive()
-            ):
-                self._motion_timer.start()
+            self._update_motion_timer()
             self.focus_overlay.raise_()
 
     def eventFilter(self, obj, event):
@@ -995,6 +1029,9 @@ class Audience(QMainWindow):
         self.pause_overlay.setGeometry(self.view.rect())
         if self._paused:
             self.pause_overlay.raise_()
+        # Video geometry followed the old 25 fps redraw; keep it on resize.
+        if self._video_widget is not None and 0 <= self.i < len(self.data["slides"]):
+            self._video_widget.setGeometry(self._video_rect(self.data["slides"][self.i]))
 
     def keyPressEvent(self, e):
         self.keyForward.emit(int(e.key()), int(e.modifiers()), e.text())

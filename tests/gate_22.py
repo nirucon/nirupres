@@ -264,7 +264,75 @@ def check_toolbar(m, app, check):
     w.close()
 
 
+def check_presenter_idle(m, app, check):
+    deck = m.clone(m.DEFAULT)
+    deck["transition"] = "FADE"
+    deck["slides"] = [
+        m.slide_defaults({"title": "Still"}),
+        m.slide_defaults(
+            {"title": "Moving", "backgroundImage": "/nonexistent/bg.jpg", "backgroundMotion": "KEN BURNS"}
+        ),
+    ]
+    screen = app.primaryScreen()
+    session = m.Presenter(deck, 0, screen, screen, online=True)
+    _settle(app)
+    aud = session.audience
+    check(not aud._motion_timer.isActive(), "motion timer must idle on a slide without motion")
+    session.navigate(1)
+    _settle(app)
+    check(aud._motion_timer.isActive(), "KEN BURNS slide must animate")
+    session.set_blank("B")
+    check(not aud._motion_timer.isActive(), "motion must pause while the audience is black")
+    session.set_blank(None)
+    check(aud._motion_timer.isActive(), "motion must resume after black")
+    session.set_blank("W")
+    check(not aud._motion_timer.isActive(), "motion must pause while the audience is white")
+    session.set_blank(None)
+    session.toggle_curtain()
+    check(not aud._motion_timer.isActive(), "motion must pause behind the curtain")
+    session.toggle_curtain()
+    check(aud._motion_timer.isActive(), "motion must resume after the curtain")
+    session.toggle_pause()
+    _settle(app)
+    check(not aud._motion_timer.isActive(), "motion must pause during PAUS")
+    tick = aud.pause_overlay._tick
+    check(tick.isActive() and tick.remainingTime() >= 300, "pause clock must not wake every 100 ms")
+    session.toggle_pause()
+    _settle(app)
+    check(aud._motion_timer.isActive(), "motion must resume after PAUS")
+    # A finished pan stops the timer: emulate the end of the 18 s movement.
+    aud._motion_clock = _FakeClock(int(m.KEN_BURNS_MS) + 10)
+    aud.draw()
+    check(not aud._motion_timer.isActive(), "motion timer must stop once the pan is complete")
+    session.navigate(-1)
+    _settle(app)
+    check(not aud._motion_timer.isActive(), "motion timer must stop when leaving the slide")
+    session.close_session()
+    _settle(app)
+    reduced = m.clone(deck)
+    reduced["reduceMotion"] = True
+    quiet = m.Audience(reduced, 1, online=True)
+    check(not quiet._motion_timer.isActive(), "Reduce motion must keep the timer off")
+    quiet.close()
+
+
+class _FakeClock:
+    def __init__(self, elapsed):
+        self._elapsed = elapsed
+
+    def elapsed(self):
+        return self._elapsed
+
+    def restart(self):
+        self._elapsed = 0
+        return 0
+
+    def isValid(self):
+        return True
+
+
 def run(m, app, check):
+    check_presenter_idle(m, app, check)
     check_toolbar(m, app, check)
     check_profiles(m, app, check)
     check_label_fit(m, app, check)
