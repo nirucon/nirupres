@@ -6,9 +6,15 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Isolate XDG roots before nirupres is imported: its data paths are resolved at
+# import time, and the installer runs this gate on the user's own machine.
+from gate_compat import isolate_user_data, QTest
+
+isolate_user_data()
+
 from PySide6.QtWidgets import QApplication, QPushButton, QComboBox, QCheckBox, QLineEdit
 from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
 
 # Qt 6.11 requires a QGuiApplication before nirupres.main is imported because
 # module initialization reaches Qt font services. Create it before that import.
