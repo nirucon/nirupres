@@ -1,3 +1,17 @@
+# Upgrading to NIRUPRES 2.2.0
+
+2.2.0 keeps project format 9 and Markdown format 2; no conversion is needed and
+decks saved by 2.2 still open in 2.1.x. Run `./install.sh` from the release (or
+`nirux extras update`). The installer keeps the previous generation for
+rollback and preserves `~/.local/share/nirupres` user data.
+
+- **Profile:** upgrading from 2.1 or earlier writes
+  `~/.local/share/nirupres/profile.json` with the Uddevalla profile, so new
+  decks keep the logo default you had. Switch with New → Profile or the command
+  palette. Fresh installations start with the neutral profile.
+- **Inspector layout** is remembered in `~/.local/share/nirupres/ui.json`;
+  deleting that file restores the defaults.
+
 # Upgrading from NIRUPRES 2.0.0 / 1.7.3
 
 NIRUPRES 2.1.0 keeps project format 9 and Markdown format 2. Existing projects,

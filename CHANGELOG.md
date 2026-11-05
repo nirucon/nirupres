@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.2.0 — UX and maintainability
+
+Project format 9 and Markdown format 2 are unchanged; existing decks open and
+save byte-identically (apart from `appVersion`), also back in 2.1.4.
+
+- **Organization profiles.** The Uddevalla identity (logo on for new decks,
+  starters, title preset, placeholders) is an opt-in profile; fresh installs
+  start neutral. Upgraded installations and installations with existing
+  settings keep Uddevalla automatically. Decks keep their own logo setting.
+- **No clipped labels.** Controls size from font metrics (also with the NIRUX
+  chrome font); the editor fits 1366x768, the inspector scrolls.
+- **Inspector:** sections other than Content start collapsed, show a one-line
+  summary and remember their state.
+- **Toolbar:** grouped File | Slide | View | Present with separators and a ⋯
+  overflow menu at narrow widths; all actions and shortcuts kept.
+- **Presenting idles:** the audience window no longer repaints at 25 fps on
+  still slides (19% -> 0% CPU when presenting, 11% -> 0.2% online); KEN BURNS
+  animates only while moving and pauses under black/white/curtain/PAUS.
+- **Autosave status** in the status bar and a Restore/Discard recovery prompt;
+  the autosave model is documented in the README.
+- **Slide list:** Alt+Up/Down reorders slides; slides have accessible names.
+- Closing the editor during Talk mode stops the NIRUCLIP recording.
+- The release gate isolates XDG data (the installer's gate run could clear a
+  real autosave), runs on distro PySide6 without QtTest, and has new checks.
+  `scripts/test.sh`, CI on push/PR, and a module split of `main.py`.
+
 ## 2.1.4 — release packaging fix
 
 - Keeps the 2.1 feature set; the release archive includes install.sh before checksumming.

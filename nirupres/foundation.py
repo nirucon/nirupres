@@ -76,7 +76,7 @@ from PySide6.QtWidgets import (
 )
 
 APP = "NIRUPRES"
-VERSION = "2.1.4"
+VERSION = "2.2.0"
 FORMAT = 9
 MD_FORMAT = 2
 TAGLINE = "A minimal, suckless presentation app by Nicklas Rudolfsson."
