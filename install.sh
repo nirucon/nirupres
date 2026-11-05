@@ -116,6 +116,15 @@ if ! QT_QPA_PLATFORM=offscreen PYTHONPATH="$DEST" "$VENV/bin/python" "$DEST/test
 QT_QPA_PLATFORM=offscreen "$BIN" --version >/dev/null || abort_install "Installed CLI failed --version; previous managed files were restored."
 
 rm -rf -- "$BACKUP"; BACKUP=""; rm -rf -- "$STAGE"; STAGE=""; trap - EXIT HUP INT TERM
+# 2.2 organization profiles: an upgraded pre-2.2 installation keeps the
+# Uddevalla defaults it always had. Written once, never overwritten.
+if [ ! -e "$DEST/profile.json" ]; then
+    case "$OLD_VERSION" in
+        1.*|2.0.*|2.1.*|unknown)
+            printf '{\n  "profile": "uddevalla",\n  "reason": "upgraded from %s"\n}\n' "$OLD_VERSION" > "$DEST/profile.json" || :
+            printf 'Profile: kept Uddevalla defaults for this upgraded installation (%s).\n' "$DEST/profile.json" ;;
+    esac
+fi
 printf '\nNIRUPRES %s installed successfully.\n' "$VERSION"
 if [ "$OLD_VERSION" != "none" ]; then printf 'Upgrade: %s -> %s\n' "$OLD_VERSION" "$VERSION"; fi
 printf 'User data, recent files, display preferences and the virtual environment were preserved.\nRun: nirupres\n'

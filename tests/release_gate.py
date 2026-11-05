@@ -1170,6 +1170,13 @@ def main():
         not qt_callback_errors,
         f"Qt callback error escaped release gate: {qt_callback_errors[0][1] if qt_callback_errors else ''}",
     )
+    import gate_22
+
+    gate_22.run(m, app, check)
+    check(
+        not qt_callback_errors,
+        f"Qt callback error in 2.2 checks: {qt_callback_errors[0][1] if qt_callback_errors else ''}",
+    )
     sys.excepthook = original_excepthook
 
     print("NIRUPRES release gate: PASS")

@@ -6,7 +6,8 @@ for the author's personal Linux setup (Omarchy/Arch and Debian).
 
 ## Features
 
-- Slide layouts and themes, including Uddevalla visual profiles
+- Slide layouts and themes, including the Uddevalla theme family
+- Opt-in organization profiles (neutral by default, Uddevalla selectable)
 - Markdown import/export and speaker notes
 - Presenter and audience windows
 - PDF and image-based PowerPoint export
@@ -108,3 +109,23 @@ Projects, autosave, recent files and preferences live under the XDG data root,
 normally `~/.local/share/nirupres`. Existing projects are untouched. The installer
 also registers `application/x-nirupres`, a desktop entry and an icon. Release
 assets are immutable and verified by the installer.
+
+## NIRUPRES 2.2
+
+### Organization profiles
+
+A profile sets defaults and wording for **new** decks only: whether the logo
+master switch starts on, the starter themes in **New**, the title preset name and
+placeholder texts. Every theme, including the Uddevalla family, is available in
+every profile, and each deck keeps its own `showLogo` value, so switching profile
+never changes an existing presentation.
+
+- **Neutral** (default for fresh installations): no logo by default, neutral
+  starters and placeholders.
+- **Uddevalla**: the official logo on by default, Uddevalla starters, the
+  "Uddevalla title" preset.
+
+Choose it in **New → Profile** or the command palette (`Ctrl+K` → "Profile").
+The choice is stored in `~/.local/share/nirupres/profile.json`. An installation
+that already has NIRUPRES settings, or that `install.sh` upgrades from 2.1 or
+earlier, keeps the Uddevalla profile automatically.

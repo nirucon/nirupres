@@ -220,15 +220,20 @@ class DeckSettings(QDialog):
         self.numbers = QCheckBox("Show minimal slide numbers")
         self.numbers.setChecked(data.get("showNumbers", False))
         f.addRow("Slide numbers", self.numbers)
-        self.logo = QCheckBox("Show official Uddevalla logo")
+        info = getattr(parent, "profile_info", None) or {
+            "logo_checkbox": "Show official Uddevalla logo",
+            "logo_row": "Uddevalla logo",
+            "footer_placeholder_short": "Optional · e.g. Socialtjänsten · 2026-09-24",
+        }
+        self.logo = QCheckBox(info["logo_checkbox"])
         self.logo.setChecked(data.get("showLogo", True))
         self.logo.setEnabled(THEMES.get(data.get("theme", "B&W"), {}).get("uddevalla", False))
         self.theme.currentTextChanged.connect(
             lambda th: self.logo.setEnabled(THEMES.get(th, {}).get("uddevalla", False))
         )
-        f.addRow("Uddevalla logo", self.logo)
+        f.addRow(info["logo_row"], self.logo)
         self.footer = QLineEdit(data.get("footerText", ""))
-        self.footer.setPlaceholderText("Optional · e.g. Socialtjänsten · 2026-09-24")
+        self.footer.setPlaceholderText(info["footer_placeholder_short"])
         f.addRow("Footer", self.footer)
         self.footer_align = QComboBox()
         self.footer_align.addItems(["LEFT", "CENTER", "RIGHT"])

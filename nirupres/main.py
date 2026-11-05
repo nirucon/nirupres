@@ -98,6 +98,7 @@ from .markdown_io import *
 from .markdown_io import _md_bool, _meta_block
 from .markdown_io import _md_bool, _meta_block
 from . import theme as chrome_theme
+from . import profile as org_profile
 from .talk import TalkSession
 
 
@@ -105,7 +106,8 @@ class Main(QMainWindow):
     def __init__(self):
         super().__init__()
         DATA.mkdir(parents=True, exist_ok=True)
-        self.data = clone(DEFAULT)
+        self.profile_name = org_profile.resolve_profile(DATA)
+        self.data = self.new_deck_data()
         self.path = None
         self.dirty = False
         self.presenter = None
@@ -149,6 +151,37 @@ class Main(QMainWindow):
         self.chrome_watcher.fileChanged.connect(lambda _: self.chrome_debounce.start())
         self.chrome_watcher.directoryChanged.connect(lambda _: self.chrome_debounce.start())
         self._watch_chrome_files()
+
+    @property
+    def profile_info(self):
+        return org_profile.profile_info(self.profile_name)
+
+    def new_deck_data(self, theme=None):
+        data = org_profile.apply_new_deck_defaults(clone(DEFAULT), self.profile_name)
+        if theme:
+            data["theme"] = theme
+        return data
+
+    def set_profile(self, name):
+        if name not in org_profile.PROFILES:
+            return
+        try:
+            org_profile.set_profile(name, DATA)
+        except OSError as error:
+            self.statusBar().showMessage(f"Profile could not be saved: {error}", 4000)
+        self.profile_name = name
+        self.apply_profile()
+        self.statusBar().showMessage(
+            f"Profile: {self.profile_info['label']} · applies to new decks; open decks keep their logo setting",
+            4000,
+        )
+
+    def apply_profile(self):
+        info = self.profile_info
+        self.title_preset_action.setText(info["title_preset"])
+        self.logo.setToolTip(info["logo_tooltip"])
+        self.footer.setPlaceholderText(info["footer_placeholder"])
+        self.accent_override.setToolTip(info["accent_tooltip"])
 
     def action(self, t, slot, key=None):
         a = QAction(t, self)
@@ -299,7 +332,7 @@ class Main(QMainWindow):
         presets.setToolTip("Insert a ready-made slide pattern")
         pmenu = QMenu(presets)
         for label, key in [
-            ("Uddevalla title", "TITLE"),
+            (self.profile_info["title_preset"], "TITLE"),
             ("Agenda", "BULLETS"),
             ("Section divider", "SECTION"),
             ("Key message", "STATEMENT"),
@@ -308,7 +341,10 @@ class Main(QMainWindow):
             ("Result / KPI", "BIG NUMBER"),
             ("Thank you", "END"),
         ]:
-            pmenu.addAction(label, lambda _=False, k=key: self.add_preset(k))
+            act = pmenu.addAction(label, lambda _=False, k=key: self.add_preset(k))
+            if key == "TITLE" and not hasattr(self, "title_preset_action"):
+                self.title_preset_action = act
+        self.presets_menu = pmenu
         presets.setMenu(pmenu)
         lv.addWidget(presets)
         root.addWidget(left)
@@ -396,9 +432,7 @@ class Main(QMainWindow):
         self.guides.setToolTip("Show editor alignment guides · never shown to audience")
         deck_output.addWidget(self.guides)
         self.logo = QCheckBox("LOGO")
-        self.logo.setToolTip(
-            "Master switch for the official Uddevalla kommun logo · slide AUTO/ON/OFF is in STYLE"
-        )
+        self.logo.setToolTip(self.profile_info["logo_tooltip"])
         deck_output.addWidget(self.logo)
         deck_output.addStretch(1)
         deck.addLayout(deck_output)
@@ -406,7 +440,7 @@ class Main(QMainWindow):
         deck_meta.setSpacing(8)
         deck_meta.addWidget(QLabel("FOOTER", objectName="deckLabel"))
         self.footer = QLineEdit()
-        self.footer.setPlaceholderText("Optional footer · e.g. Socialtjänsten · 2026-09-24")
+        self.footer.setPlaceholderText(self.profile_info["footer_placeholder"])
         self.footer.setToolTip(
             "Optional deck footer · alignment and size are available in Deck Settings"
         )
@@ -605,7 +639,7 @@ class Main(QMainWindow):
         sf.addRow("Logo", self.logo_mode)
         self.accent_override = QComboBox()
         self.accent_override.addItems(["AUTO", "BLUE", "GREEN", "YELLOW", "RED", "PINK", "PURPLE"])
-        self.accent_override.setToolTip("Per-slide Uddevalla accent override")
+        self.accent_override.setToolTip(self.profile_info["accent_tooltip"])
         sf.addRow("Accent", self.accent_override)
         self.override_font = QCheckBox("Override deck font")
         sf.addRow("", self.override_font)
@@ -1020,6 +1054,10 @@ class Main(QMainWindow):
             ("Focus mode", self.toggle_focus),
             ("Editor chrome · Follow NIRUX", lambda: self.set_chrome_follow(True)),
             ("Editor chrome · Noir", lambda: self.set_chrome_follow(False)),
+            *(
+                (f"Profile · {info['label']} (new decks)", lambda n=name: self.set_profile(n))
+                for name, info in org_profile.PROFILES.items()
+            ),
             ("Talk · screen + microphone", lambda: self.start_talk("screen-mic")),
             ("Talk · screen + camera", lambda: self.start_talk("screen-camera")),
             ("Talk · camera + microphone", lambda: self.start_talk("camera-mic")),
@@ -1971,15 +2009,30 @@ class Main(QMainWindow):
         v = QVBoxLayout(d)
         v.addWidget(QLabel("NEW PRESENTATION"))
         choice = {"theme": "B&W", "do_import": False}
-        for label, theme in [
-            ("Blank", "B&W"),
-            ("Uddevalla Blue", "UDDEVALLA BLUE"),
-            ("Uddevalla Dark", "UDDEVALLA DARK"),
-            ("Uddevalla Black", "UDDEVALLA BLACK"),
-        ]:
-            b = QPushButton(label)
-            b.clicked.connect(lambda _=False, t=theme: (choice.update(theme=t), d.accept()))
-            v.addWidget(b)
+        prow = QHBoxLayout()
+        prow.addWidget(QLabel("PROFILE", objectName="deckLabel"))
+        pcombo = QComboBox()
+        for name, info in org_profile.PROFILES.items():
+            pcombo.addItem(info["label"], name)
+        pcombo.setCurrentIndex(max(0, pcombo.findData(self.profile_name)))
+        pcombo.setToolTip("Organization profile for new decks · existing decks keep their own logo setting")
+        prow.addWidget(pcombo, 1)
+        v.addLayout(prow)
+        starters = QVBoxLayout()
+        v.addLayout(starters)
+
+        def fill_starters():
+            while starters.count():
+                item = starters.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            for label, theme in org_profile.profile_info(pcombo.currentData())["starters"]:
+                b = QPushButton(label)
+                b.clicked.connect(lambda _=False, t=theme: (choice.update(theme=t), d.accept()))
+                starters.addWidget(b)
+
+        fill_starters()
+        pcombo.currentIndexChanged.connect(lambda _: fill_starters())
         imp = QPushButton("FROM MARKDOWN / AI…")
         imp.clicked.connect(lambda: (choice.update(do_import=True), d.accept()))
         v.addWidget(imp)
@@ -1988,11 +2041,12 @@ class Main(QMainWindow):
         v.addWidget(cancel)
         if d.exec() != QDialog.Accepted:
             return
+        if pcombo.currentData() != self.profile_name:
+            self.set_profile(pcombo.currentData())
         if choice["do_import"]:
             self.import_markdown()
             return
-        self.data = clone(DEFAULT)
-        self.data["theme"] = choice["theme"]
+        self.data = self.new_deck_data(choice["theme"])
         self.path = None
         self.dirty = False
         self.state.setText("")
