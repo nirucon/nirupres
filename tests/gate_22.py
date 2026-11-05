@@ -213,7 +213,59 @@ def check_inspector(m, app, check):
     (m.DATA / "ui.json").unlink(missing_ok=True)
 
 
+def check_toolbar(m, app, check):
+    from PySide6.QtWidgets import QToolButton
+
+    w = m.Main()
+    sections = list(w.toolbar_sections)
+    check(sections == ["File", "Slide", "View", "Present"], f"toolbar groups: {sections}")
+    texts = {}
+    for name, items in w.toolbar_sections.items():
+        texts[name] = []
+        for item in items:
+            widget = w.toolbar.widgetForAction(item)
+            if item.isSeparator() or widget is None:
+                continue
+            text = widget.defaultAction().text() if isinstance(widget, QToolButton) and widget.defaultAction() else widget.text()
+            texts[name].append(text)
+    check(
+        texts["File"] == ["NEW", "OPEN", "SAVE", "EXPORT", "IMPORT MD"]
+        and texts["Slide"] == ["+ SLIDE", "DUPLICATE", "DELETE", "↶", "↷"]
+        and texts["Present"] == ["▶ PRESENT", "|▶", "▣", "● TALK", "◉ ONLINE", "▦"],
+        f"toolbar grouping changed: {texts}",
+    )
+    separators = sum(1 for items in w.toolbar_sections.values() for x in items if x.isSeparator())
+    check(separators == 3, "toolbar groups need visible separators")
+    shortcuts = {a.shortcut().toString() for a in w.actions() if not a.shortcut().isEmpty()}
+    for key in ("Ctrl+N", "Ctrl+O", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+Enter", "Ctrl+D", "Del",
+                "Ctrl+Z", "Ctrl+Shift+Z", "Tab", "Ctrl+K", "F5", "Shift+F5", "Ctrl+Shift+E"):
+        check(key in shortcuts, f"window shortcut missing: {key} ({sorted(shortcuts)})")
+    w._available_width = lambda: 1920
+    w.resize(1920, 1000)
+    w.show()
+    _settle(app)
+    check(not w.toolbar_hidden_sections and not w.overflow_action.isVisible(), "1920 px must show every group")
+    w.resize(1100, 760)
+    _settle(app)
+    check("View" in w.toolbar_hidden_sections and w.overflow_action.isVisible(), "narrow toolbar must overflow into ⋯")
+    check(
+        all(not x.isVisible() for x in w.toolbar_sections["View"]),
+        "overflowed View group still on the toolbar",
+    )
+    w._fill_overflow_menu()
+    menu_texts = [a.text() for a in w.overflow_menu.actions()]
+    for text in ("FOCUS", "NIRUX", "⌘", "About NIRUPRES / diagnostics"):
+        check(text in menu_texts, f"overflow menu lacks {text}: {menu_texts}")
+    check(w.toolbar.width() >= w._toolbar_width_needed() - 12, "toolbar still overflows at 1100 px")
+    check(all(x.isVisible() for x in w.toolbar_sections["Present"]), "Present group must stay visible")
+    w.resize(1920, 1000)
+    _settle(app)
+    check(not w.overflow_action.isVisible(), "overflow must disappear when wide again")
+    w.close()
+
+
 def run(m, app, check):
+    check_toolbar(m, app, check)
     check_profiles(m, app, check)
     check_label_fit(m, app, check)
     check_inspector(m, app, check)
