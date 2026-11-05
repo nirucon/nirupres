@@ -462,6 +462,8 @@ class Main(QMainWindow):
         deck_primary.addWidget(QLabel("FONT", objectName="deckLabel"))
         self.deckfont = QComboBox()
         self.deckfont.addItems(QFontDatabase.families())
+        self.deckfont.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.deckfont.setMinimumContentsLength(14)
         self.deckfont.setMinimumWidth(190)
         self.deckfont.setToolTip("Deck typeface")
         deck_primary.addWidget(self.deckfont, 3)
@@ -567,6 +569,7 @@ class Main(QMainWindow):
         self.list_style.setToolTip("Marker style for BULLETS and AGENDA layouts")
         cf.addRow("List style", self.list_style)
         rv.addWidget(content)
+        self.content_group = content
         content.toggled.connect(lambda on, g=content: self.collapse_group(g, on))
         image = QGroupBox("▼  IMAGE")
         self.image_group = image
@@ -721,6 +724,9 @@ class Main(QMainWindow):
         sf.addRow("", self.override_font)
         self.slide_font = QComboBox()
         self.slide_font.addItems(QFontDatabase.families())
+        # Size from a sensible text length, not the longest installed family name.
+        self.slide_font.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.slide_font.setMinimumContentsLength(14)
         self.slide_font.setEnabled(False)
         sf.addRow("Slide font", self.slide_font)
         self.override_theme.toggled.connect(self.slide_theme.setEnabled)
@@ -732,12 +738,18 @@ class Main(QMainWindow):
         self.align.addItems(["LEFT", "CENTER", "RIGHT"])
         self.weight = QComboBox()
         self.weight.addItems(["AUTO", "LIGHT", "REGULAR", "BOLD"])
-        tr.addWidget(QLabel("Size"))
-        tr.addWidget(self.fontscale)
-        tr.addWidget(QLabel("Align"))
-        tr.addWidget(self.align)
-        tr.addWidget(QLabel("Weight"))
-        tr.addWidget(self.weight)
+        # Two rows instead of one: the single row needed ~500 px and forced the
+        # inspector wider than a 1366 px screen allows.
+        tr = QGridLayout()
+        tr.setContentsMargins(0, 0, 0, 0)
+        tr.addWidget(QLabel("Size"), 0, 0)
+        tr.addWidget(self.fontscale, 0, 1)
+        tr.addWidget(QLabel("Align"), 0, 2)
+        tr.addWidget(self.align, 0, 3)
+        tr.addWidget(QLabel("Weight"), 1, 0)
+        tr.addWidget(self.weight, 1, 1, 1, 3)
+        tr.setColumnStretch(1, 1)
+        tr.setColumnStretch(3, 1)
         sf.addRow("Typography", tr)
         self.brightness = QSlider(Qt.Horizontal)
         self.brightness.setRange(-30, 30)
@@ -791,6 +803,7 @@ class Main(QMainWindow):
         rv.addWidget(pres)
         pres.toggled.connect(lambda on, g=pres: self.collapse_group(g, on))
         self.collapse_group(pres, False)
+        self.restore_inspector_state()
         rv.addStretch()
         root.addWidget(right)
         root.setSizes([210, 1020, 340])
@@ -996,12 +1009,158 @@ class Main(QMainWindow):
         self.refit_text()
         self._watch_chrome_files()
 
+    INSPECTOR_SECTIONS = ("CONTENT", "IMAGE", "VIDEO", "STYLE", "PRESENTATION")
+    SUMMARY_LIMIT = 30
+
+    def _inspector_groups(self):
+        return {
+            "CONTENT": self.content_group,
+            "IMAGE": self.image_group,
+            "VIDEO": self.video_group,
+            "STYLE": self.style_group,
+            "PRESENTATION": self.presentation_group,
+        }
+
+    @staticmethod
+    def _group_base(g):
+        base = g.property("baseTitle")
+        if not base:
+            base = g.title().replace("▼  ", "").replace("▶  ", "").split("  ·  ")[0]
+            g.setProperty("baseTitle", base)
+        return base
+
     def collapse_group(self, g, on):
-        base = g.title().replace("▼  ", "").replace("▶  ", "")
+        base = self._group_base(g)
         g.setTitle(("▼  " if on else "▶  ") + base)
         for w in g.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
             w.setVisible(on)
         g.setMaximumHeight(16777215 if on else 34)
+        if not getattr(self, "_restoring_inspector", True):
+            self.save_inspector_state()
+        if not on:
+            self._apply_group_summary(g)
+
+    def _apply_group_summary(self, g):
+        base = self._group_base(g)
+        if g.isChecked():
+            g.setToolTip("")
+            return
+        summary = self.inspector_summary(base)
+        shown = summary
+        if len(shown) > self.SUMMARY_LIMIT:
+            shown = shown[: self.SUMMARY_LIMIT - 1].rstrip() + "…"
+        g.setTitle("▶  " + base + (f"  ·  {shown}" if shown else ""))
+        g.setToolTip(f"{base.title()}: {summary}" if summary else "")
+
+    def update_inspector_summaries(self):
+        if not hasattr(self, "presentation_group"):
+            return
+        for g in self._inspector_groups().values():
+            if not g.isChecked():
+                self._apply_group_summary(g)
+
+    def inspector_summary(self, section):
+        """One-line state of a collapsed inspector section, e.g. "fill · center"."""
+        s = self.current() or {}
+        place = {0.0: "left", 0.5: "center", 1.0: "right"}
+        vplace = {0.0: "top", 0.5: "center", 1.0: "bottom"}
+
+        def focal(x, y):
+            fx = place.get(float(s.get(x, 0.5)), "custom")
+            fy = vplace.get(float(s.get(y, 0.5)), "custom")
+            return "center" if fx == fy == "center" else f"{fx}/{fy}"
+
+        if section == "CONTENT":
+            title = (s.get("title") or "").strip() or "untitled"
+            return f"{str(s.get('layout', 'TITLE')).lower()} · {title}"
+        if section == "IMAGE":
+            parts = []
+            if s.get("image"):
+                parts.append(str(s.get("imageMode", "FILL")).lower())
+                parts.append(focal("focalX", "focalY"))
+                treatment = str(s.get("imageTreatment", "NATURAL")).lower()
+                if treatment != "natural":
+                    parts.append(treatment)
+            if s.get("backgroundImage"):
+                parts.append("background")
+                if s.get("backgroundMotion", "NONE") != "NONE":
+                    parts.append("ken burns")
+            return " · ".join(parts) or "none"
+        if section == "VIDEO":
+            source = str(s.get("videoSource") or "").strip()
+            if not source:
+                return "none"
+            parts = ["web" if re.match(r"^https?://", source, re.I) else "local"]
+            if s.get("videoAutoplay"):
+                parts.append("autoplay")
+            if s.get("videoMuted"):
+                parts.append("muted")
+            return " · ".join(parts)
+        if section == "STYLE":
+            parts = [
+                (
+                    "deck theme"
+                    if s.get("themeOverride", "DECK") == "DECK"
+                    else str(s.get("themeOverride")).lower()
+                ),
+                str(s.get("align", "LEFT")).lower(),
+            ]
+            if s.get("fontFamily", "DECK") != "DECK":
+                parts.append(str(s.get("fontFamily")))
+            if s.get("logoMode", "AUTO") != "AUTO":
+                parts.append("logo " + str(s.get("logoMode")).lower())
+            return " · ".join(parts)
+        if section == "PRESENTATION":
+            parts = ["hidden" if s.get("hidden") else "shown"]
+            if (s.get("notes") or "").strip():
+                parts.append("notes")
+            transition = normalize_transition(s.get("transition", "DECK"), True)
+            parts.append("deck transition" if transition == "DECK" else transition.lower())
+            return " · ".join(parts)
+        return ""
+
+    def _ui_state_path(self):
+        return DATA / "ui.json"
+
+    def restore_inspector_state(self):
+        """Open/closed state per section: CONTENT open, the rest closed by default."""
+        state = {}
+        try:
+            raw = json.loads(self._ui_state_path().read_text(encoding="utf-8"))
+            state = raw.get("inspector", {}) if isinstance(raw, dict) else {}
+        except (OSError, ValueError):
+            state = {}
+        self._restoring_inspector = True
+        try:
+            for name, g in self._inspector_groups().items():
+                g.setProperty("baseTitle", self._group_base(g))
+                want = state.get(name, name == "CONTENT")
+                want = bool(want) if isinstance(want, bool) else name == "CONTENT"
+                if g.isChecked() != want:
+                    g.setChecked(want)  # emits toggled -> collapse_group
+                else:
+                    self.collapse_group(g, want)
+        finally:
+            self._restoring_inspector = False
+
+    def save_inspector_state(self):
+        if not hasattr(self, "presentation_group"):
+            return
+        path = self._ui_state_path()
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            if not isinstance(raw, dict):
+                raw = {}
+        except (OSError, ValueError):
+            raw = {}
+        raw["inspector"] = {name: g.isChecked() for name, g in self._inspector_groups().items()}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+            tmp.replace(path)
+        except OSError:
+            pass
 
     def _dialog_start(self, filename="", prefer_current=True):
         folder = preferred_folder(self.file_prefs, self.path, prefer_current)
@@ -1382,9 +1541,9 @@ class Main(QMainWindow):
         self.notes.setPlainText(s["notes"])
         for w in vals:
             w.blockSignals(False)
-        has_image = bool(s.get("image"))
-        if has_image and not self.image_group.isChecked():
-            self.image_group.setChecked(True)
+        # 2.2 (U1): sections keep the open/closed state the user chose; a
+        # collapsed IMAGE section shows its summary instead of auto-expanding.
+        self.update_inspector_summaries()
         self.view.render(
             s,
             self.data.get("theme", "B&W"),
@@ -1464,6 +1623,7 @@ class Main(QMainWindow):
             self.data.get("footerSize", "MEDIUM"),
         )
         self.update_thumb(i)
+        self.update_inspector_summaries()
         self.histtimer.start()
 
     def theme_changed(self, *_):

@@ -168,6 +168,52 @@ def check_label_fit(m, app, check):
             w.close()
 
 
+def check_inspector(m, app, check):
+    (m.DATA / "ui.json").unlink(missing_ok=True)
+    w = m.Main()
+    groups = w._inspector_groups()
+    check(
+        {k: g.isChecked() for k, g in groups.items()}
+        == {"CONTENT": True, "IMAGE": False, "VIDEO": False, "STYLE": False, "PRESENTATION": False},
+        "inspector default must collapse every section except CONTENT",
+    )
+    w.data["slides"][0].update(
+        {"image": "/nonexistent/photo.jpg", "imageMode": "FILL", "focalX": 0.5, "focalY": 0.5}
+    )
+    w.select(0)
+    check(not groups["IMAGE"].isChecked(), "IMAGE section must not auto-expand")
+    check(
+        "IMAGE  ·  fill · center" in groups["IMAGE"].title(),
+        f"collapsed IMAGE summary missing: {groups['IMAGE'].title()!r}",
+    )
+    check("Image: fill · center" in groups["IMAGE"].toolTip(), "IMAGE summary tooltip missing")
+    check("VIDEO  ·  none" in groups["VIDEO"].title(), "collapsed VIDEO summary missing")
+    w.notes.setPlainText("Speaker note")
+    check("notes" in groups["PRESENTATION"].title(), "PRESENTATION summary did not follow edits")
+    groups["STYLE"].setChecked(True)
+    groups["CONTENT"].setChecked(False)
+    check(groups["STYLE"].title() == "▼  STYLE", "expanded section must not show a summary")
+    w.dirty = False
+    w.close()
+    again = m.Main()
+    state = {k: g.isChecked() for k, g in again._inspector_groups().items()}
+    check(
+        state["STYLE"] and not state["CONTENT"] and not state["IMAGE"],
+        f"inspector open/closed state not remembered: {state}",
+    )
+    check(
+        again.content_group.title().startswith("▶  CONTENT  ·  "),
+        "collapsed CONTENT summary missing after restart",
+    )
+    again.close()
+    (m.DATA / "ui.json").write_text("{broken", encoding="utf-8")
+    fallback = m.Main()
+    check(fallback.content_group.isChecked(), "broken ui.json must fall back to defaults")
+    fallback.close()
+    (m.DATA / "ui.json").unlink(missing_ok=True)
+
+
 def run(m, app, check):
     check_profiles(m, app, check)
     check_label_fit(m, app, check)
+    check_inspector(m, app, check)
