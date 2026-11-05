@@ -331,7 +331,44 @@ class _FakeClock:
         return True
 
 
+def check_autosave_status(m, app, check):
+    m.AUTOSAVE.unlink(missing_ok=True)
+    w = m.Main()
+    check(w.state.isVisibleTo(w), "save state must be visible in the status bar")
+    w.title.setText("Edited")
+    check("Unsaved" in w.state.text(), f"dirty state not shown: {w.state.text()!r}")
+    w.autosave()
+    check(m.AUTOSAVE.exists(), "autosave file not written")
+    check(w.state.text().startswith("● Autosaved "), f"autosave state: {w.state.text()!r}")
+    with tempfile.TemporaryDirectory(prefix="nirupres-save-") as td:
+        w.path = Path(td) / "deck.nirupres"
+        check(w.save(), "fixture save failed")
+        check(w.state.text().startswith("Saved "), f"saved state: {w.state.text()!r}")
+        check(not m.AUTOSAVE.exists(), "save must clear the autosave")
+    w.dirty = False
+    w.close()
+    payload = {"source": "", "data": m.clone(m.DEFAULT)}
+    payload["data"]["slides"][0]["title"] = "Recovered title"
+    for choice, restored, kept in (("restore", True, True), (None, False, True), ("discard", False, False)):
+        m.AUTOSAVE.write_text(json.dumps(payload), encoding="utf-8")
+        r = m.Main()
+        asked = []
+        r._ask_recovery = lambda info, c=choice: (asked.append(info), c)[1]
+        r.offer_recovery()
+        check(asked and "Restore it, or discard" in asked[0], "recovery prompt text missing")
+        got = r.data["slides"][0]["title"] == "Recovered title"
+        check(got == restored, f"recovery choice {choice!r} restored={got}")
+        if restored:
+            check(r.state.text() == "● Recovered from autosave" and r.dirty, "recovered state not shown")
+        check(m.AUTOSAVE.exists() == kept, f"recovery choice {choice!r} autosave kept={m.AUTOSAVE.exists()}")
+        r.dirty = False
+        r.offer_recovery = lambda: None
+        r.close()
+    m.AUTOSAVE.unlink(missing_ok=True)
+
+
 def run(m, app, check):
+    check_autosave_status(m, app, check)
     check_presenter_idle(m, app, check)
     check_toolbar(m, app, check)
     check_profiles(m, app, check)

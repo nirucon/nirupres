@@ -4,7 +4,7 @@ Refactored from the verified 1.7.3 baseline. Existing project and Markdown
 format versions remain unchanged.
 """
 
-import json, sys, zipfile, tempfile, shutil, uuid, re, stat, os, platform, hashlib
+import json, sys, zipfile, tempfile, shutil, uuid, re, stat, os, platform, hashlib, time
 from collections import OrderedDict
 from pathlib import Path
 from PySide6.QtCore import (
@@ -559,8 +559,14 @@ class Main(QMainWindow):
             lambda on: self.set_side_panel("right", on, from_toggle=True)
         )
         top.addWidget(self.showright)
+        # 2.2 (U4): save/autosave state is always visible in the status bar.
         self.state = QLabel()
-        self.state.setVisible(False)
+        self.state.setObjectName("saveState")
+        self.state.setToolTip(
+            "Unsaved edits are autosaved 2.5 s after the last change and offered for"
+            " recovery after a crash"
+        )
+        self.statusBar().addPermanentWidget(self.state)
         cv.addLayout(top)
         # Deck controls use semantic groups rather than a flat grid: a label is
         # always visually attached to the control it describes, while larger
@@ -2108,7 +2114,7 @@ class Main(QMainWindow):
 
     def mark_dirty(self):
         self.dirty = True
-        self.state.setText("● UNSAVED")
+        self.state.setText("● Unsaved changes")
         self.update_title()
         if hasattr(self, "autotimer"):
             self.autotimer.start()
@@ -2490,7 +2496,7 @@ class Main(QMainWindow):
                 os.replace(tmp, self.path)
             self.add_recent(self.path)
             self.dirty = False
-            self.state.setText("SAVED")
+            self.state.setText(f"Saved {_clock_now()}")
             self.update_title()
             self.clear_autosave()
             saved = max(0, asset_stats["before"] - asset_stats["after"])
@@ -2726,7 +2732,7 @@ class Main(QMainWindow):
             tmp = AUTOSAVE.with_suffix(".tmp")
             tmp.write_text(payload, encoding="utf-8")
             tmp.replace(AUTOSAVE)
-            self.state.setText("● AUTOSAVED")
+            self.state.setText(f"● Autosaved {_clock_now()}")
         except Exception as e:
             self.statusBar().showMessage(f"Autosave failed: {e}", 4000)
 
@@ -2736,21 +2742,37 @@ class Main(QMainWindow):
         except:
             pass
 
+    def _ask_recovery(self, info):
+        """Ask Restore/Discard for autosaved work. Returns "restore", "discard" or None."""
+        box = make_message_box(self, "Recover autosave", info, QMessageBox.NoButton)
+        restore = box.addButton("Restore", QMessageBox.AcceptRole)
+        discard = box.addButton("Discard", QMessageBox.DestructiveRole)
+        buttons = box.findChild(QDialogButtonBox)
+        if buttons is not None:
+            neutralize_button_box(buttons)
+        box.setDefaultButton(restore)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is restore:
+            return "restore"
+        if clicked is discard:
+            return "discard"
+        return None  # closed: keep the autosave for the next start
+
     def offer_recovery(self):
+        """Offer autosaved work found at start (written only while edits were unsaved)."""
         if not AUTOSAVE.exists():
             return
         try:
             p = json.loads(AUTOSAVE.read_text(encoding="utf-8"))
-            if (
-                message_question(
-                    self,
-                    "Recover autosave",
-                    "Unsaved NIRUPRES work was found. Recover it?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes,
-                )
-                == QMessageBox.Yes
-            ):
+            when = _clock_at(AUTOSAVE.stat().st_mtime)
+            source = Path(p["source"]).name if p.get("source") else "an untitled presentation"
+            info = (
+                f"Unsaved NIRUPRES work from {when} was found ({source}).\n\n"
+                "Restore it, or discard the autosave?"
+            )
+            choice = self._ask_recovery(info)
+            if choice == "restore":
                 self.data = p["data"]
                 normalize_themes(self.data)
                 self.data.setdefault("theme", "B&W")
@@ -2775,10 +2797,14 @@ class Main(QMainWindow):
                 self.history = []
                 self.history_pos = -1
                 self.push_history()
-                self.state.setText("● RECOVERED")
-            else:
+                self.update_title()
+                self.state.setText("● Recovered from autosave")
+                self.statusBar().showMessage(
+                    f"Recovered from autosave ({when}) · save to keep it", 5000
+                )
+            elif choice == "discard":
                 self.clear_autosave()
-        except:
+        except Exception:
             self.clear_autosave()
 
     def confirm_discard(self):
@@ -3102,6 +3128,14 @@ class Main(QMainWindow):
         self.presenter.finished.connect(self._presentation_finished)
 
 
+def _clock_at(timestamp):
+    return time.strftime("%H:%M", time.localtime(timestamp))
+
+
+def _clock_now():
+    return _clock_at(time.time())
+
+
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 CHEVRON = (ASSET_DIR / "chevron-down.svg").as_posix()
 CHECKMARK = (ASSET_DIR / "check.svg").as_posix()
@@ -3132,6 +3166,7 @@ QSlider::handle:horizontal{width:14px;margin:-5px 0;background:#ddd;border:1px s
 QSlider::handle:horizontal:hover{background:#fff;border-color:#fff}
 QSlider:focus QSlider::handle:horizontal{border:1px solid #fff}
 #thumbtitle{font-size:10px;color:#aaa}
+#saveState{color:#a8a8a8;padding:0 8px}
 #doc{font-size:12px;font-weight:700;letter-spacing:.5px;color:#ddd;background:#0b0b0b;border:1px solid #242424;padding:6px 14px;border-radius:3px} #doc:hover{color:#fff;border-color:#505050;background:#111}
 #aboutTitle{font-size:28px;font-weight:900;color:#f2f2f2;letter-spacing:2px} #aboutTag{font-size:14px;color:#aaa;padding-bottom:8px}
 #deckLabel{font-family:"Noto Sans Mono",monospace;font-size:10px;font-weight:700;color:#737373;letter-spacing:.7px}

@@ -129,3 +129,21 @@ Choose it in **New → Profile** or the command palette (`Ctrl+K` → "Profile")
 The choice is stored in `~/.local/share/nirupres/profile.json`. An installation
 that already has NIRUPRES settings, or that `install.sh` upgrades from 2.1 or
 earlier, keeps the Uddevalla profile automatically.
+
+### Saving, autosave and recovery
+
+- **Save** (`Ctrl+S`) writes the whole deck, with its images, into one
+  `.nirupres` archive. The previous file is replaced only after the new one has
+  been verified.
+- **Autosave** is a crash safety net, not a second save: 2.5 seconds after the
+  last edit of an *unsaved* deck, NIRUPRES writes one recovery file,
+  `~/.local/share/nirupres/autosave.json`. It never touches your `.nirupres`
+  file. Saving, opening another deck or closing NIRUPRES normally removes it.
+- The status bar shows the state on the right: `● Unsaved changes`,
+  `● Autosaved hh:mm` or `Saved hh:mm`.
+- If NIRUPRES did not close normally, the next start shows when the work was
+  autosaved and offers **Restore** or **Discard**. Closing that dialog keeps the
+  autosave for the next start. A restored deck is marked
+  `● Recovered from autosave` and stays unsaved until you save it.
+
+The editor writes no files while idle; autosave runs only after an edit.
