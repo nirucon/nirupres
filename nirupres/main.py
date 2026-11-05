@@ -74,6 +74,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QInputDialog,
     QGraphicsOpacityEffect,
+    QScrollArea,
+    QFrame,
 )
 
 from .foundation import *
@@ -131,6 +133,7 @@ class Main(QMainWindow):
         self.talk_session = None
         self.build()
         self.apply_chrome()
+        self.refit_text()
         self.reload_recents()
         self.refresh()
         self.push_history()
@@ -183,6 +186,61 @@ class Main(QMainWindow):
         self.footer.setPlaceholderText(info["footer_placeholder"])
         self.accent_override.setToolTip(info["accent_tooltip"])
 
+    def fit_text(self, widget, floor=0, fixed=False):
+        """Size a control from its own polished text metrics (R5).
+
+        Hard-coded pixel widths clipped labels such as OUTLINE once the NIRUX
+        chrome font or the platform font differed from the author's machine.
+        The floor keeps the original compact look where the text is shorter.
+        """
+        if not hasattr(self, "_fit_targets"):
+            self._fit_targets = []
+        self._fit_targets.append((widget, int(floor), bool(fixed)))
+        self._fit_one(widget, int(floor), bool(fixed))
+        return widget
+
+    @staticmethod
+    def _fit_one(widget, floor, fixed):
+        widget.ensurePolished()
+        width = max(floor, widget.sizeHint().width())
+        if fixed:
+            widget.setFixedWidth(width)
+        else:
+            widget.setMinimumWidth(width)
+
+    def refit_text(self):
+        for widget, floor, fixed in getattr(self, "_fit_targets", []):
+            self._fit_one(widget, floor, fixed)
+        self._fit_inspector_width()
+
+    def _fit_inspector_width(self):
+        scroll = getattr(self, "inspector_scroll", None)
+        if scroll is None:
+            return
+        inner = scroll.widget()
+        bar = scroll.verticalScrollBar().sizeHint().width()
+        need = inner.minimumSizeHint().width() + bar + 2 * scroll.frameWidth()
+        # On a narrow screen (or with a large chrome font) the inspector scrolls
+        # horizontally rather than pushing the window off-screen.
+        rest = self.root_splitter.widget(1).minimumSizeHint().width() + 24
+        if self.left_panel.isVisible():
+            rest += self.left_panel.minimumSizeHint().width()
+        cap = max(260, self._available_width() - rest)
+        width = min(need, cap)
+        if scroll.minimumWidth() != width:
+            scroll.setMinimumWidth(width)
+
+    def _available_width(self):
+        screen = self.screen() or QApplication.primaryScreen()
+        return screen.availableGeometry().width() if screen is not None else 1366
+
+    def eventFilter(self, obj, event):
+        # The inspector body re-lays out when sections expand or the chrome
+        # font changes; keep the scroll area wide enough for its controls.
+        if obj is getattr(self, "_inspector_body", None) and event.type() == QEvent.LayoutRequest:
+            QTimer.singleShot(0, self._fit_inspector_width)
+        return super().eventFilter(obj, event)
+
     def action(self, t, slot, key=None):
         a = QAction(t, self)
         a.triggered.connect(slot)
@@ -223,6 +281,7 @@ class Main(QMainWindow):
         em.addAction(self.action("Copy AI prompt", self.copy_ai_prompt))
         em.addAction(self.action("AI template/spec…", self.export_ai_template))
         export.setMenu(em)
+        self.fit_text(export)
         tb.addWidget(export)
         tb.addAction(self.action("IMPORT MD", self.import_markdown))
         tb.addSeparator()
@@ -236,7 +295,7 @@ class Main(QMainWindow):
         tb.addAction(self.chrome_action)
         tb.addAction(self.action("⌘", self.command_palette, "Ctrl+K"))
         about = QPushButton("?")
-        about.setFixedWidth(34)
+        self.fit_text(about, 34, fixed=True)
         about.setToolTip("About NIRUPRES / diagnostics")
         about.clicked.connect(self.about)
         tb.addWidget(about)
@@ -248,19 +307,19 @@ class Main(QMainWindow):
         tb.addWidget(present)
         pstart = QPushButton("|▶")
         pstart.setObjectName("presentAux")
-        pstart.setFixedWidth(42)
+        self.fit_text(pstart, 42, fixed=True)
         pstart.setToolTip("Present from beginning · Shift+F5")
         pstart.clicked.connect(lambda: self.present(True))
         tb.addWidget(pstart)
         pview = QPushButton("▣")
         pview.setObjectName("presentAux")
-        pview.setFixedWidth(42)
+        self.fit_text(pview, 42, fixed=True)
         pview.setToolTip("Presenter View / display")
         pview.clicked.connect(self.presenter_view)
         tb.addWidget(pview)
         talk = QPushButton("● TALK")
         talk.setObjectName("presentAux")
-        talk.setMinimumWidth(84)
+        self.fit_text(talk, 84)
         talk.setToolTip("Present and record with NIRUCLIP · slide chapters and subtitles")
         tmenu = QMenu(talk)
         for label, profile in [
@@ -275,7 +334,7 @@ class Main(QMainWindow):
         tb.addWidget(talk)
         online = QPushButton("◉ ONLINE")
         online.setObjectName("presentAux")
-        online.setMinimumWidth(86)
+        self.fit_text(online, 86)
         online.setToolTip(
             "Online presentation · opens a clean Audience window for Teams/Meet/Zoom sharing"
         )
@@ -283,7 +342,7 @@ class Main(QMainWindow):
         tb.addWidget(online)
         pover = QPushButton("▦")
         pover.setObjectName("presentAux")
-        pover.setFixedWidth(42)
+        self.fit_text(pover, 42, fixed=True)
         pover.setToolTip("Presentation overview")
         pover.clicked.connect(self.presentation_overview)
         tb.addWidget(pover)
@@ -309,13 +368,13 @@ class Main(QMainWindow):
         self.count = QLabel()
         hh.addWidget(self.count)
         self.outline_btn = QPushButton("OUTLINE")
-        self.outline_btn.setMinimumWidth(72)
+        self.fit_text(self.outline_btn, 72)
         self.outline_btn.setToolTip("Switch between slide thumbnails and compact outline")
         self.outline_btn.setCheckable(True)
         self.outline_btn.toggled.connect(self.toggle_outline)
         hh.addWidget(self.outline_btn)
         collapse = QPushButton("‹")
-        collapse.setFixedWidth(28)
+        self.fit_text(collapse, 28, fixed=True)
         collapse.setToolTip("Hide Slides panel")
         collapse.clicked.connect(lambda: self.set_side_panel("left", False))
         hh.addWidget(collapse)
@@ -330,6 +389,7 @@ class Main(QMainWindow):
         lv.addWidget(plus)
         presets = QPushButton("PRESETS")
         presets.setToolTip("Insert a ready-made slide pattern")
+        self.fit_text(presets)
         pmenu = QMenu(presets)
         for label, key in [
             (self.profile_info["title_preset"], "TITLE"),
@@ -353,7 +413,7 @@ class Main(QMainWindow):
         cv.setContentsMargins(12, 10, 12, 10)
         top = QHBoxLayout()
         self.showleft = QPushButton("SLIDES")
-        self.showleft.setMinimumWidth(70)
+        self.fit_text(self.showleft, 70)
         self.showleft.setCheckable(True)
         self.showleft.setChecked(True)
         self.showleft.setToolTip("Show or hide the Slides panel")
@@ -372,7 +432,7 @@ class Main(QMainWindow):
         top.addWidget(self.doc, 0, Qt.AlignCenter)
         top.addStretch(1)
         self.showright = QPushButton("INSPECTOR")
-        self.showright.setMinimumWidth(86)
+        self.fit_text(self.showright, 86)
         self.showright.setCheckable(True)
         self.showright.setChecked(True)
         self.showright.setToolTip("Show or hide the Inspector panel")
@@ -402,7 +462,7 @@ class Main(QMainWindow):
         deck_primary.addWidget(QLabel("FONT", objectName="deckLabel"))
         self.deckfont = QComboBox()
         self.deckfont.addItems(QFontDatabase.families())
-        self.deckfont.setMinimumWidth(220)
+        self.deckfont.setMinimumWidth(190)
         self.deckfont.setToolTip("Deck typeface")
         deck_primary.addWidget(self.deckfont, 3)
         deck_primary.addSpacing(16)
@@ -449,6 +509,7 @@ class Main(QMainWindow):
         self.deck_settings_btn = QPushButton("DECK SETTINGS…")
         self.deck_settings_btn.setToolTip("Open all deck-level settings in one dialog")
         self.deck_settings_btn.clicked.connect(self.deck_settings)
+        self.fit_text(self.deck_settings_btn)
         deck_meta.addWidget(self.deck_settings_btn)
         deck.addLayout(deck_meta)
         cv.addLayout(deck)
@@ -469,11 +530,26 @@ class Main(QMainWindow):
         rh.addWidget(QLabel("INSPECTOR"))
         rh.addStretch()
         rc = QPushButton("›")
-        rc.setFixedWidth(28)
+        self.fit_text(rc, 28, fixed=True)
         rc.setToolTip("Hide Inspector panel")
         rc.clicked.connect(lambda: self.set_side_panel("right", False))
         rh.addWidget(rc)
         rv.addLayout(rh)
+        # The inspector scrolls vertically so the editor fits a 1366x768 screen;
+        # the panel never squeezes its controls horizontally (see refit_text).
+        self.inspector_scroll = QScrollArea()
+        self.inspector_scroll.setWidgetResizable(True)
+        self.inspector_scroll.setFrameShape(QFrame.NoFrame)
+        self.inspector_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        inspector_body = QWidget()
+        inspector_body.setObjectName("inspectorBody")
+        self._inspector_body = inspector_body
+        inspector_body.installEventFilter(self)
+        panel_layout = rv
+        rv = QVBoxLayout(inspector_body)
+        rv.setContentsMargins(0, 0, 4, 0)
+        self.inspector_scroll.setWidget(inspector_body)
+        panel_layout.addWidget(self.inspector_scroll, 1)
         content = QGroupBox("▼  CONTENT")
         content.setCheckable(True)
         content.setChecked(True)
@@ -904,6 +980,7 @@ class Main(QMainWindow):
         self.chrome_follow = follow
         chrome_theme.write_follow_preference(follow)
         self.apply_chrome()
+        self.refit_text()
 
     def _watch_chrome_files(self):
         for path in chrome_theme.watch_paths():
@@ -916,6 +993,7 @@ class Main(QMainWindow):
             self.chrome_action.setEnabled(self.chrome_available)
         self.chrome_follow = self.chrome_follow and self.chrome_available
         self.apply_chrome()
+        self.refit_text()
         self._watch_chrome_files()
 
     def collapse_group(self, g, on):

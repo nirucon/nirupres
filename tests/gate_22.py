@@ -5,6 +5,7 @@ Called from tests/release_gate.py after the historical contracts. Every check
 runs inside the gate's isolated XDG roots.
 """
 
+import dataclasses
 import json
 import tempfile
 from pathlib import Path
@@ -84,5 +85,89 @@ def check_profiles(m, app, check):
     m.org_profile.set_profile("neutral", m.DATA)
 
 
+def clipped_text_widgets(w):
+    """Visible text controls narrower than their own size hint (elided/clipped)."""
+    from PySide6.QtWidgets import QCheckBox, QGroupBox, QLabel, QPushButton, QToolButton
+
+    clipped = []
+    for cls in (QPushButton, QToolButton, QCheckBox, QLabel):
+        for x in w.findChildren(cls):
+            if not x.isVisibleTo(w) or not x.text():
+                continue
+            if isinstance(x, QLabel) and x.wordWrap():
+                continue
+            if x is getattr(w, "doc", None):  # elides itself with a tooltip
+                continue
+            if x.width() + 1 < x.sizeHint().width():
+                clipped.append(f"{x.text()!r} {x.width()}<{x.sizeHint().width()}")
+    for g in w.findChildren(QGroupBox):
+        need = g.fontMetrics().horizontalAdvance(g.title()) + 16
+        if g.isVisibleTo(w) and g.width() < need:
+            clipped.append(f"group {g.title()!r} {g.width()}<{need}")
+    return clipped
+
+
+def _settle(app, rounds=12):
+    for _ in range(rounds):
+        app.processEvents()
+
+
+def check_label_fit(m, app, check):
+    catalog = {
+        "active": "gate",
+        "themes": [
+            {
+                "id": "gate",
+                "name": "Gate",
+                "colors": {
+                    "background": "101010",
+                    "foreground": "eeeeee",
+                    "muted": "999999",
+                    "border": "303030",
+                    "focus": "abcdef",
+                },
+            }
+        ],
+    }
+    with tempfile.TemporaryDirectory(prefix="nirupres-chrome-fit-") as td:
+        (Path(td) / "niruwm").mkdir()
+        (Path(td) / "niruwm" / "config.toml").write_text('theme = "gate"\n', encoding="utf-8")
+        base = m.chrome_theme.load_nirux_chrome(Path(td), json.dumps(catalog))
+    big = dataclasses.replace(base, font_size=15)
+    for width, height in ((1366, 768), (1920, 1080)):
+        for label, palette in (("default font", None), ("15px chrome font", big)):
+            w = m.Main()
+            # Size decisions follow the screen; emulate a screen of this size.
+            w._available_width = lambda width=width: width
+            if palette is not None:
+                w.chrome_palette = palette
+                w.setStyleSheet(m.chrome_theme.chrome_style(m.STYLE, palette))
+                w.refit_text()
+            w.resize(width, height)
+            w.show()
+            _settle(app)
+            check(
+                w.width() <= width and w.height() <= height,
+                f"editor cannot fit {width}x{height} ({label}): {w.width()}x{w.height()}",
+            )
+            w.refit_text()
+            _settle(app)
+            scroll = w.inspector_scroll
+            inner = scroll.widget()
+            check(
+                inner.width() >= inner.minimumSizeHint().width(),
+                f"inspector controls squeezed at {width}x{height} ({label})",
+            )
+            if palette is None:
+                check(
+                    inner.width() <= scroll.viewport().width(),
+                    f"inspector needs horizontal scrolling at {width}x{height} (default font)",
+                )
+            clipped = clipped_text_widgets(w)
+            check(not clipped, f"clipped labels at {width}x{height} ({label}): {clipped}")
+            w.close()
+
+
 def run(m, app, check):
     check_profiles(m, app, check)
+    check_label_fit(m, app, check)
