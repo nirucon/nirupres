@@ -2410,8 +2410,17 @@ CHECKMARK = (ASSET_DIR / "check.svg").as_posix()
 
 STYLE = """
 QWidget{background:#080808;color:#e8e8e8;font-family:"Noto Sans",sans-serif;font-size:13px} QMainWindow{background:#080808}
-QToolBar{background:#0b0b0b;border:0;border-bottom:1px solid #242424;padding:7px;spacing:4px} QToolButton,QPushButton{qproperty-iconSize:0px 0px;background:#121212;border:1px solid #303030;padding:7px 11px;font-weight:650;min-height:18px} QToolButton:hover,QPushButton:hover{background:#202020;border-color:#555} QPushButton#present{background:#e8e8e8;color:#090909;border-color:#e8e8e8;font-weight:900;padding-right:14px} QPushButton#presentAux{background:#151515;color:#e8e8e8;border:1px solid #3a3a3a;font-weight:850;padding:7px 5px} QPushButton#presentAux:hover{background:#242424;border-color:#777}
-QListWidget,QLineEdit,QTextEdit,QComboBox{background:#0e0e0e;border:1px solid #292929;padding:8px;selection-background-color:#eee;selection-color:#090909} QComboBox{padding-right:34px;min-height:18px} QListWidget{padding:5px} QListWidget::item{border:1px solid transparent} QListWidget::item:selected{border:1px solid #777;background:#151515}
+QToolBar{background:#0b0b0b;border:0;border-bottom:1px solid #242424;padding:7px;spacing:4px}
+QToolButton,QPushButton{qproperty-iconSize:0px 0px;background:#121212;border:1px solid #303030;padding:7px 11px;font-weight:650;min-height:18px}
+QToolButton:hover,QPushButton:hover{background:#202020;border-color:#555}
+QPushButton#present{background:#e8e8e8;color:#090909;border-color:#e8e8e8;font-weight:900;padding-right:14px}
+QPushButton#presentAux{background:#151515;color:#e8e8e8;border:1px solid #3a3a3a;font-weight:850;padding:7px 5px}
+QPushButton#presentAux:hover{background:#242424;border-color:#777}
+QListWidget,QLineEdit,QTextEdit,QComboBox{background:#0e0e0e;border:1px solid #292929;padding:8px;selection-background-color:#eee;selection-color:#090909}
+QComboBox{padding-right:34px;min-height:18px}
+QListWidget{padding:5px}
+QListWidget::item{border:1px solid transparent}
+QListWidget::item:selected{border:1px solid #777;background:#151515}
 QLabel{color:#a8a8a8}
 QGroupBox{border:0;border-top:1px solid #242424;margin-top:12px;padding:13px 6px 7px 6px;font-weight:750;color:#c6c6c6}
 QGroupBox::title{subcontrol-origin:margin;left:2px;padding:0 7px 0 2px;background:#080808}
@@ -2427,7 +2436,18 @@ QCheckBox:disabled{color:#555}
 QLineEdit:focus,QTextEdit:focus,QComboBox:focus,QListWidget:focus{border:1px solid #8c8c8c;background:#111}
 QLineEdit:hover,QTextEdit:hover,QComboBox:hover{border-color:#484848}
 QPushButton:focus,QToolButton:focus{border:1px solid #9a9a9a}
-QComboBox::drop-down{border:0;border-left:1px solid #303030;width:30px;background:#141414} QComboBox::drop-down:hover{background:#222} QComboBox::down-arrow{image:url(__CHEVRON__);width:12px;height:8px} QComboBox QAbstractItemView{background:#111;color:#e8e8e8;border:1px solid #454545;selection-background-color:#e8e8e8;selection-color:#090909;outline:0;padding:4px} QComboBox:disabled{color:#5d5d5d;background:#0b0b0b;border-color:#202020} QComboBox::drop-down:disabled{background:#0b0b0b;border-left-color:#202020} QPushButton#menuButton{padding-right:34px} QPushButton#menuButton::menu-indicator{image:url(__CHEVRON__);subcontrol-origin:padding;subcontrol-position:center right;width:12px;height:8px;right:10px} QMenu{background:#111;color:#e8e8e8;border:1px solid #454545;padding:5px} QMenu::item{padding:7px 28px 7px 10px} QMenu::item:selected{background:#e8e8e8;color:#090909} QMenu::separator{height:1px;background:#303030;margin:5px 8px}
+QComboBox::drop-down{border:0;border-left:1px solid #303030;width:30px;background:#141414}
+QComboBox::drop-down:hover{background:#222}
+QComboBox::down-arrow{image:url(__CHEVRON__);width:12px;height:8px}
+QComboBox QAbstractItemView{background:#111;color:#e8e8e8;border:1px solid #454545;selection-background-color:#e8e8e8;selection-color:#090909;outline:0;padding:4px}
+QComboBox:disabled{color:#5d5d5d;background:#0b0b0b;border-color:#202020}
+QComboBox::drop-down:disabled{background:#0b0b0b;border-left-color:#202020}
+QPushButton#menuButton{padding-right:34px}
+QPushButton#menuButton::menu-indicator{image:url(__CHEVRON__);subcontrol-origin:padding;subcontrol-position:center right;width:12px;height:8px;right:10px}
+QMenu{background:#111;color:#e8e8e8;border:1px solid #454545;padding:5px}
+QMenu::item{padding:7px 28px 7px 10px}
+QMenu::item:selected{background:#e8e8e8;color:#090909}
+QMenu::separator{height:1px;background:#303030;margin:5px 8px}
 QSlider::groove:horizontal{height:4px;background:#333;border-radius:2px}
 QSlider::groove:horizontal:hover{background:#414141}
 QSlider::handle:horizontal{width:14px;margin:-5px 0;background:#ddd;border:1px solid #eee;border-radius:7px}
