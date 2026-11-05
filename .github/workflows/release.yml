@@ -17,7 +17,9 @@ jobs:
           version=$(sed -n 's/^VERSION="\(.*\)"/\1/p' install.sh | head -1)
           test "v$version" = "${GITHUB_REF_NAME}"
           test "$(sed -n 's/^__version__ = "\(.*\)"/\1/p' nirupres/__init__.py)" = "$version"
-          test "$(grep -o "VERSION='[0-9.]*'" nirupres/foundation.py | head -1 | cut -d"'" -f2)" = "$version"
+          test "$(sed -n 's/^VERSION = "\(.*\)"/\1/p' nirupres/foundation.py | head -1)" = "$version"
+          test "$(sed -n 's/^EXPECTED_VERSION = "\(.*\)"/\1/p' tests/release_gate.py)" = "$version"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
       - run: pip install -r requirements.txt
       - run: python3 -m compileall -q nirupres tests
@@ -25,16 +27,16 @@ jobs:
       - name: Package release
         run: |
           rm -rf dist build
-          mkdir -p dist/nirupres-2.1.4
-          cp -R nirupres tests mime dist/nirupres-2.1.4/
-          cp install.sh run.sh requirements.txt README.md CHANGELOG.md UPGRADE.md SECURITY.md LICENSE NIRUPRES-AI-GUIDE.md dist/nirupres-2.1.4/
+          mkdir -p "dist/nirupres-$VERSION"
+          cp -R nirupres tests scripts mime "dist/nirupres-$VERSION/"
+          cp install.sh run.sh requirements.txt README.md CHANGELOG.md UPGRADE.md SECURITY.md LICENSE NIRUPRES-AI-GUIDE.md "dist/nirupres-$VERSION/"
           cp install.sh dist/
-          (cd dist && zip -qr "NIRUPRES-2.1.4.zip" nirupres-2.1.4)
-          (cd dist && sha256sum "NIRUPRES-2.1.4.zip" install.sh > SHA256SUMS)
+          (cd dist && zip -qr "NIRUPRES-$VERSION.zip" "nirupres-$VERSION")
+          (cd dist && sha256sum "NIRUPRES-$VERSION.zip" install.sh > SHA256SUMS)
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/NIRUPRES-2.1.4.zip
+            dist/NIRUPRES-${{ env.VERSION }}.zip
             dist/install.sh
             dist/SHA256SUMS
           make_latest: true
