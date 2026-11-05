@@ -226,7 +226,11 @@ def check_toolbar(m, app, check):
             widget = w.toolbar.widgetForAction(item)
             if item.isSeparator() or widget is None:
                 continue
-            text = widget.defaultAction().text() if isinstance(widget, QToolButton) and widget.defaultAction() else widget.text()
+            text = (
+                widget.defaultAction().text()
+                if isinstance(widget, QToolButton) and widget.defaultAction()
+                else widget.text()
+            )
             texts[name].append(text)
     check(
         texts["File"] == ["NEW", "OPEN", "SAVE", "EXPORT", "IMPORT MD"]
@@ -237,17 +241,37 @@ def check_toolbar(m, app, check):
     separators = sum(1 for items in w.toolbar_sections.values() for x in items if x.isSeparator())
     check(separators == 3, "toolbar groups need visible separators")
     shortcuts = {a.shortcut().toString() for a in w.actions() if not a.shortcut().isEmpty()}
-    for key in ("Ctrl+N", "Ctrl+O", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+Enter", "Ctrl+D", "Del",
-                "Ctrl+Z", "Ctrl+Shift+Z", "Tab", "Ctrl+K", "F5", "Shift+F5", "Ctrl+Shift+E"):
+    for key in (
+        "Ctrl+N",
+        "Ctrl+O",
+        "Ctrl+S",
+        "Ctrl+Shift+S",
+        "Ctrl+Enter",
+        "Ctrl+D",
+        "Del",
+        "Ctrl+Z",
+        "Ctrl+Shift+Z",
+        "Tab",
+        "Ctrl+K",
+        "F5",
+        "Shift+F5",
+        "Ctrl+Shift+E",
+    ):
         check(key in shortcuts, f"window shortcut missing: {key} ({sorted(shortcuts)})")
     w._available_width = lambda: 1920
     w.resize(1920, 1000)
     w.show()
     _settle(app)
-    check(not w.toolbar_hidden_sections and not w.overflow_action.isVisible(), "1920 px must show every group")
+    check(
+        not w.toolbar_hidden_sections and not w.overflow_action.isVisible(),
+        "1920 px must show every group",
+    )
     w.resize(1100, 760)
     _settle(app)
-    check("View" in w.toolbar_hidden_sections and w.overflow_action.isVisible(), "narrow toolbar must overflow into ⋯")
+    check(
+        "View" in w.toolbar_hidden_sections and w.overflow_action.isVisible(),
+        "narrow toolbar must overflow into ⋯",
+    )
     check(
         all(not x.isVisible() for x in w.toolbar_sections["View"]),
         "overflowed View group still on the toolbar",
@@ -257,7 +281,9 @@ def check_toolbar(m, app, check):
     for text in ("FOCUS", "NIRUX", "⌘", "About NIRUPRES / diagnostics"):
         check(text in menu_texts, f"overflow menu lacks {text}: {menu_texts}")
     check(w.toolbar.width() >= w._toolbar_width_needed() - 12, "toolbar still overflows at 1100 px")
-    check(all(x.isVisible() for x in w.toolbar_sections["Present"]), "Present group must stay visible")
+    check(
+        all(x.isVisible() for x in w.toolbar_sections["Present"]), "Present group must stay visible"
+    )
     w.resize(1920, 1000)
     _settle(app)
     check(not w.overflow_action.isVisible(), "overflow must disappear when wide again")
@@ -270,7 +296,11 @@ def check_presenter_idle(m, app, check):
     deck["slides"] = [
         m.slide_defaults({"title": "Still"}),
         m.slide_defaults(
-            {"title": "Moving", "backgroundImage": "/nonexistent/bg.jpg", "backgroundMotion": "KEN BURNS"}
+            {
+                "title": "Moving",
+                "backgroundImage": "/nonexistent/bg.jpg",
+                "backgroundMotion": "KEN BURNS",
+            }
         ),
     ]
     screen = app.primaryScreen()
@@ -349,7 +379,11 @@ def check_autosave_status(m, app, check):
     w.close()
     payload = {"source": "", "data": m.clone(m.DEFAULT)}
     payload["data"]["slides"][0]["title"] = "Recovered title"
-    for choice, restored, kept in (("restore", True, True), (None, False, True), ("discard", False, False)):
+    for choice, restored, kept in (
+        ("restore", True, True),
+        (None, False, True),
+        ("discard", False, False),
+    ):
         m.AUTOSAVE.write_text(json.dumps(payload), encoding="utf-8")
         r = m.Main()
         asked = []
@@ -359,8 +393,14 @@ def check_autosave_status(m, app, check):
         got = r.data["slides"][0]["title"] == "Recovered title"
         check(got == restored, f"recovery choice {choice!r} restored={got}")
         if restored:
-            check(r.state.text() == "● Recovered from autosave" and r.dirty, "recovered state not shown")
-        check(m.AUTOSAVE.exists() == kept, f"recovery choice {choice!r} autosave kept={m.AUTOSAVE.exists()}")
+            check(
+                r.state.text() == "● Recovered from autosave" and r.dirty,
+                "recovered state not shown",
+            )
+        check(
+            m.AUTOSAVE.exists() == kept,
+            f"recovery choice {choice!r} autosave kept={m.AUTOSAVE.exists()}",
+        )
         r.dirty = False
         r.offer_recovery = lambda: None
         r.close()
@@ -396,11 +436,15 @@ def check_slide_list_keyboard(m, app, check):
     check(titles() == ["Two", "One", "Three"], "keyboard move must be undoable")
     names = [w.list.item(i).data(Qt.AccessibleTextRole) for i in range(w.list.count())]
     check(
-        names[0] == "Slide 1 of 3: Two (TITLE)" and names[2] == "Slide 3 of 3: Three (TITLE, hidden)",
+        names[0] == "Slide 1 of 3: Two (TITLE)"
+        and names[2] == "Slide 3 of 3: Three (TITLE, hidden)",
         f"slide accessible names: {names}",
     )
     thumb = w.list.itemWidget(w.list.item(1))
-    check(thumb is not None and thumb.accessibleName() == names[1], "thumbnail accessible name missing")
+    check(
+        thumb is not None and thumb.accessibleName() == names[1],
+        "thumbnail accessible name missing",
+    )
     w.title.setText("Renamed")
     check(
         w.list.item(w.list.currentRow()).data(Qt.AccessibleTextRole).endswith(": Renamed (TITLE)"),
@@ -432,18 +476,38 @@ def check_round_trip(m, app, check):
         plain = m.clone(m.DEFAULT)
         plain["slides"] = [
             m.slide_defaults({"layout": "BULLETS", "title": "Plan", "body": "a\nb", "notes": "n"}),
-            m.slide_defaults({"layout": "TWO COLUMN", "title": "Två", "body": "L\n\n|||\n\nR",
-                              "leftColumn": "L", "rightColumn": "R", "twoColumnStructured": True}),
+            m.slide_defaults(
+                {
+                    "layout": "TWO COLUMN",
+                    "title": "Två",
+                    "body": "L\n\n|||\n\nR",
+                    "leftColumn": "L",
+                    "rightColumn": "R",
+                    "twoColumnStructured": True,
+                }
+            ),
         ]
         fixtures["plain.json"] = plain
-        legacy = {"title": "Legacy", "theme": "UDDEVALLA", "slides": [{"layout": "TITLE", "title": "Old"}]}
+        legacy = {
+            "title": "Legacy",
+            "theme": "UDDEVALLA",
+            "slides": [{"layout": "TITLE", "title": "Old"}],
+        }
         fixtures["legacy.json"] = legacy
         branded = m.clone(m.DEFAULT)
         branded.update({"theme": "UDDEVALLA PURPLE", "showLogo": False, "footerText": "Fot"})
         branded["slides"] = [
-            m.slide_defaults({"layout": "SPLIT", "title": "Bild", "image": str(photo),
-                              "backgroundImage": str(photo), "backgroundMotion": "KEN BURNS",
-                              "logoMode": "ON", "accentOverride": "GREEN"})
+            m.slide_defaults(
+                {
+                    "layout": "SPLIT",
+                    "title": "Bild",
+                    "image": str(photo),
+                    "backgroundImage": str(photo),
+                    "backgroundMotion": "KEN BURNS",
+                    "logoMode": "ON",
+                    "accentOverride": "GREEN",
+                }
+            )
         ]
         fixtures["branded.json"] = branded
         for name, data in fixtures.items():
@@ -467,11 +531,15 @@ def check_round_trip(m, app, check):
             data = json.loads(a)
             check(data["format"] == 9, f"project format changed: {name}")
             if name == "branded.json":
-                check(data["showLogo"] is False and data["theme"] == "UDDEVALLA PURPLE",
-                      "deck logo/theme changed in round trip")
+                check(
+                    data["showLogo"] is False and data["theme"] == "UDDEVALLA PURPLE",
+                    "deck logo/theme changed in round trip",
+                )
             if name == "legacy.json":
-                check(data["showLogo"] is True and data["theme"] == "UDDEVALLA BLUE",
-                      "legacy deck defaults changed in round trip")
+                check(
+                    data["showLogo"] is True and data["theme"] == "UDDEVALLA BLUE",
+                    "legacy deck defaults changed in round trip",
+                )
 
 
 def run(m, app, check):

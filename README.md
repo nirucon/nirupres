@@ -36,7 +36,10 @@ Launch with `nirupres`.
 - `nirupres/editor.py` — slide editing dialogs and widgets
 - `nirupres/markdown_io.py` — Markdown interchange and AI brief
 - `nirupres/main.py` — application shell and orchestration
-- `tests/release_gate.py` — offscreen Qt regression gate
+- `nirupres/ui_toolbar.py`, `ui_inspector.py`, `ui_slides.py` — toolbar, inspector
+  and slide-list parts of the editor window
+- `nirupres/profile.py` — organization profiles (neutral / Uddevalla)
+- `tests/release_gate.py` — offscreen Qt regression gate (`tests/gate_22.py` holds the 2.2 checks)
 
 ## Validation
 
