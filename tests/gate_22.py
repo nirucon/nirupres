@@ -411,7 +411,71 @@ def check_slide_list_keyboard(m, app, check):
     w.close()
 
 
+def _project_json(path):
+    import zipfile
+
+    with zipfile.ZipFile(path) as z:
+        return z.read("project.json")
+
+
+def check_round_trip(m, app, check):
+    """open -> save -> reopen -> save: unchanged decks keep byte-identical JSON."""
+    from PySide6.QtGui import QColor, QImage
+
+    with tempfile.TemporaryDirectory(prefix="nirupres-roundtrip-") as td:
+        root = Path(td)
+        photo = root / "photo.jpg"
+        img = QImage(1600, 900, QImage.Format.Format_RGB32)
+        img.fill(QColor("#556677"))
+        img.save(str(photo), "JPEG", 90)
+        fixtures = {}
+        plain = m.clone(m.DEFAULT)
+        plain["slides"] = [
+            m.slide_defaults({"layout": "BULLETS", "title": "Plan", "body": "a\nb", "notes": "n"}),
+            m.slide_defaults({"layout": "TWO COLUMN", "title": "Två", "body": "L\n\n|||\n\nR",
+                              "leftColumn": "L", "rightColumn": "R", "twoColumnStructured": True}),
+        ]
+        fixtures["plain.json"] = plain
+        legacy = {"title": "Legacy", "theme": "UDDEVALLA", "slides": [{"layout": "TITLE", "title": "Old"}]}
+        fixtures["legacy.json"] = legacy
+        branded = m.clone(m.DEFAULT)
+        branded.update({"theme": "UDDEVALLA PURPLE", "showLogo": False, "footerText": "Fot"})
+        branded["slides"] = [
+            m.slide_defaults({"layout": "SPLIT", "title": "Bild", "image": str(photo),
+                              "backgroundImage": str(photo), "backgroundMotion": "KEN BURNS",
+                              "logoMode": "ON", "accentOverride": "GREEN"})
+        ]
+        fixtures["branded.json"] = branded
+        for name, data in fixtures.items():
+            src = root / name
+            src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            w = m.Main()
+            w.open_path(str(src))
+            first = root / (src.stem + "-1.nirupres")
+            w.path = first
+            check(w.save(), f"round trip save failed: {name}")
+            w.close()
+            again = m.Main()
+            again.open_path(str(first))
+            check(not again.dirty, f"reopened deck marked modified: {name}")
+            second = root / (src.stem + "-2.nirupres")
+            again.path = second
+            check(again.save(), f"round trip re-save failed: {name}")
+            again.close()
+            a, b = _project_json(first), _project_json(second)
+            check(a == b, f"round trip changed project.json bytes: {name}")
+            data = json.loads(a)
+            check(data["format"] == 9, f"project format changed: {name}")
+            if name == "branded.json":
+                check(data["showLogo"] is False and data["theme"] == "UDDEVALLA PURPLE",
+                      "deck logo/theme changed in round trip")
+            if name == "legacy.json":
+                check(data["showLogo"] is True and data["theme"] == "UDDEVALLA BLUE",
+                      "legacy deck defaults changed in round trip")
+
+
 def run(m, app, check):
+    check_round_trip(m, app, check)
     check_slide_list_keyboard(m, app, check)
     check_autosave_status(m, app, check)
     check_presenter_idle(m, app, check)
