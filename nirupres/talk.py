@@ -4,6 +4,7 @@ NIRUPRES owns the presentation; NIRUCLIP owns the capture process and its
 versioned state. This module only starts/stops the CLI, observes its public
 state file and writes chapter sidecars next to the recording.
 """
+
 from __future__ import annotations
 
 import json
@@ -67,7 +68,11 @@ def srt_text(markers: list[dict], duration: float) -> str:
     markers = sorted(markers, key=lambda marker: float(marker.get("seconds", 0)))
     for index, marker in enumerate(markers):
         start = float(marker.get("seconds", 0))
-        end = float(markers[index + 1].get("seconds", duration)) if index + 1 < len(markers) else duration
+        end = (
+            float(markers[index + 1].get("seconds", duration))
+            if index + 1 < len(markers)
+            else duration
+        )
         end = max(start + 0.6, end)
         title = str(marker.get("title") or f"Slide {marker.get('slide', index + 1)}").strip()
         number = int(marker.get("slide", index + 1))
@@ -92,7 +97,9 @@ class TalkSession(QObject):
     failed = Signal(str)
     finished = Signal(object)
 
-    def __init__(self, deck_path: Path | None, slides: list[dict], profile: str = "screen-mic", parent=None):
+    def __init__(
+        self, deck_path: Path | None, slides: list[dict], profile: str = "screen-mic", parent=None
+    ):
         super().__init__(parent)
         self.deck_path = Path(deck_path) if deck_path else None
         self.slides = list(slides) if isinstance(slides, list) else []
@@ -108,7 +115,11 @@ class TalkSession(QObject):
         self._finishing = False
         self._closed = False
         prefix = safe_stem(self.deck_path.stem if self.deck_path else "Untitled")
-        videos = Path(os.environ.get("NIRUPRES_TALK_DIR", "")).expanduser() if os.environ.get("NIRUPRES_TALK_DIR") else Path.home() / "Videos"
+        videos = (
+            Path(os.environ.get("NIRUPRES_TALK_DIR", "")).expanduser()
+            if os.environ.get("NIRUPRES_TALK_DIR")
+            else Path.home() / "Videos"
+        )
         videos.mkdir(parents=True, exist_ok=True)
         self.output = videos / f"NIRUPRES-{prefix}-{timestamp()}.mkv"
         self.timer = QTimer(self)
@@ -125,7 +136,15 @@ class TalkSession(QObject):
             self.failed.emit("NIRUCLIP is not installed or not in PATH.")
             return False
         self.log = open(self.output.with_suffix(".log"), "w", encoding="utf-8")
-        args = [command, "--profile", self.profile, "--countdown", "3", "--output", str(self.output)]
+        args = [
+            command,
+            "--profile",
+            self.profile,
+            "--countdown",
+            "3",
+            "--output",
+            str(self.output),
+        ]
         try:
             self.process = subprocess.Popen(
                 args,
@@ -135,7 +154,8 @@ class TalkSession(QObject):
                 start_new_session=True,
             )
         except OSError as error:
-            self.log.close(); self.log = None
+            self.log.close()
+            self.log = None
             self.failed.emit(f"Could not start NIRUCLIP: {error}")
             return False
         self._start_deadline = time.monotonic() + 15.0
@@ -189,7 +209,11 @@ class TalkSession(QObject):
             return
         if not (0 <= index < len(self.slides)):
             return
-        title = str(self.slides[index].get("title") or self.slides[index].get("layout") or f"Slide {index + 1}")
+        title = str(
+            self.slides[index].get("title")
+            or self.slides[index].get("layout")
+            or f"Slide {index + 1}"
+        )
         marker = {
             "slide": index + 1,
             "title": title,
@@ -207,7 +231,14 @@ class TalkSession(QObject):
         command = command_path("niruclip")
         if command:
             try:
-                subprocess.run([command, "--stop"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25, check=False)
+                subprocess.run(
+                    [command, "--stop"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=25,
+                    check=False,
+                )
             except (OSError, subprocess.TimeoutExpired):
                 pass
         deadline = time.monotonic() + 25
@@ -223,8 +254,10 @@ class TalkSession(QObject):
             except subprocess.TimeoutExpired:
                 self.process.terminate()
         if self.log:
-            try: self.log.close()
-            except OSError: pass
+            try:
+                self.log.close()
+            except OSError:
+                pass
             self.log = None
         kind = str(state.get("state", ""))
         recording = Path(str(state.get("output") or self.recording or self.output))
@@ -249,13 +282,19 @@ class TalkSession(QObject):
         warnings = []
         try:
             temporary = chapters.with_suffix(".tmp")
-            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
             temporary.replace(chapters)
             subtitles.write_text(srt_text(self.markers, duration), encoding="utf-8")
         except OSError as error:
             warnings.append(f"Chapters could not be written: {error}")
         self._closed = True
-        self.finished.emit(TalkResult(recording, chapters, subtitles, self.markers, duration, self.profile, warnings))
+        self.finished.emit(
+            TalkResult(
+                recording, chapters, subtitles, self.markers, duration, self.profile, warnings
+            )
+        )
 
     def _duration(self, recording: Path) -> float:
         probe = command_path("ffprobe")
@@ -263,8 +302,21 @@ class TalkSession(QObject):
             return 0.0
         try:
             result = subprocess.run(
-                [probe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(recording)],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=4, check=False,
+                [
+                    probe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=nw=1:nk=1",
+                    str(recording),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=4,
+                check=False,
             )
             return max(0.0, float(result.stdout.decode("utf-8", "replace").strip() or 0))
         except (OSError, ValueError, subprocess.TimeoutExpired):
@@ -276,11 +328,15 @@ class TalkSession(QObject):
                 self.process.terminate()
                 self.process.wait(timeout=2)
             except (OSError, subprocess.TimeoutExpired):
-                try: self.process.kill()
-                except OSError: pass
+                try:
+                    self.process.kill()
+                except OSError:
+                    pass
         if self.log:
-            try: self.log.close()
-            except OSError: pass
+            try:
+                self.log.close()
+            except OSError:
+                pass
             self.log = None
 
     def abort(self):
@@ -291,7 +347,14 @@ class TalkSession(QObject):
         command = command_path("niruclip")
         if command:
             try:
-                subprocess.run([command, "--stop"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=False)
+                subprocess.run(
+                    [command, "--stop"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=8,
+                    check=False,
+                )
             except (OSError, subprocess.TimeoutExpired):
                 pass
         self._stop_process()

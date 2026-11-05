@@ -3,6 +3,7 @@
 Only application chrome follows NIRUX. Slide themes remain part of the deck and
 must look identical on every machine. No daemon or network access is used.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,11 @@ def command_path(name: str) -> str | None:
     found = shutil.which(name)
     if found:
         return found
-    for candidate in (Path.home() / ".local/bin" / name, Path("/usr/local/bin") / name, Path("/usr/bin") / name):
+    for candidate in (
+        Path.home() / ".local/bin" / name,
+        Path("/usr/local/bin") / name,
+        Path("/usr/bin") / name,
+    ):
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
     return None
@@ -81,7 +86,7 @@ def _hex(value: object, fallback: str) -> str:
 
 
 def _rgb(value: str) -> tuple[int, int, int]:
-    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+    return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
 
 
 def _hexrgb(rgb: tuple[int, int, int]) -> str:
@@ -152,7 +157,10 @@ def _catalog(config_home: Path | None = None, catalog_json: str | None = None) -
 
 def detect_nirux(config_home: Path | None = None) -> bool:
     config_home = config_home or xdg_config_home()
-    config, appearance = (config_home / "niruwm" / "config.toml", config_home / "niruwm" / "appearance.toml")
+    config, appearance = (
+        config_home / "niruwm" / "config.toml",
+        config_home / "niruwm" / "appearance.toml",
+    )
     if os.environ.get("NIRUPRES_CHROME", "").strip().lower() == "noir":
         return False
     return config.is_file() or appearance.is_file()
@@ -163,9 +171,13 @@ def load_nirux_chrome(
     catalog_json: str | None = None,
 ) -> ChromePalette | None:
     config_home = config_home or xdg_config_home()
-    config_path, appearance_path = nirux_config_paths() if config_home is None else (
-        config_home / "niruwm" / "config.toml",
-        config_home / "niruwm" / "appearance.toml",
+    config_path, appearance_path = (
+        nirux_config_paths()
+        if config_home is None
+        else (
+            config_home / "niruwm" / "config.toml",
+            config_home / "niruwm" / "appearance.toml",
+        )
     )
     if not detect_nirux(config_home):
         return None
@@ -286,7 +298,11 @@ def read_follow_preference() -> bool | None:
     path = chrome_preference_path()
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        return bool(value["follow_nirux"]) if isinstance(value, dict) and "follow_nirux" in value else None
+        return (
+            bool(value["follow_nirux"])
+            if isinstance(value, dict) and "follow_nirux" in value
+            else None
+        )
     except (OSError, json.JSONDecodeError, TypeError):
         return None
 
@@ -296,7 +312,9 @@ def write_follow_preference(follow: bool) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"follow_nirux": bool(follow)}, indent=2) + "\n", encoding="utf-8")
+        temporary.write_text(
+            json.dumps({"follow_nirux": bool(follow)}, indent=2) + "\n", encoding="utf-8"
+        )
         temporary.replace(path)
     except OSError:
         pass
