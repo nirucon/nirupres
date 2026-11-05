@@ -460,6 +460,10 @@ def main():
     aud.close()
 
     w = m.Main()
+    # 2.2: at narrow widths whole toolbar groups move into the ⋯ menu (their
+    # hidden toolbar copies are disabled by Qt). Check the full toolbar.
+    w.resize(1920, 1080)
+    w.update_toolbar_overflow()
     check(hasattr(m, "FileWorkflowSettings"), "file workflow settings dialog missing")
     # 1.1.1 studio-layout contract: labels are concise and the deck controls
     # remain monochrome/semantic rather than gaining decorative colour UI.
