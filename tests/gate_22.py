@@ -367,7 +367,52 @@ def check_autosave_status(m, app, check):
     m.AUTOSAVE.unlink(missing_ok=True)
 
 
+def check_slide_list_keyboard(m, app, check):
+    from PySide6.QtCore import Qt
+
+    w = m.Main()
+    w.data["slides"] = [m.slide_defaults({"title": t}) for t in ("One", "Two", "Three")]
+    w.data["slides"][2]["hidden"] = True
+    w.refresh(0)
+    w.show()
+    _settle(app)
+    w.list.setFocus()
+    _settle(app)
+    titles = lambda: [s["title"] for s in w.data["slides"]]
+    QTest.keyClick(w.list, Qt.Key_Down, Qt.AltModifier)
+    _settle(app)
+    check(titles() == ["Two", "One", "Three"], f"Alt+Down did not move the slide: {titles()}")
+    check(w.list.currentRow() == 1, "moved slide must stay selected")
+    check(w.dirty, "keyboard move must mark the deck modified")
+    QTest.keyClick(w.list, Qt.Key_Down, Qt.AltModifier)
+    QTest.keyClick(w.list, Qt.Key_Up, Qt.AltModifier)
+    _settle(app)
+    check(titles() == ["Two", "One", "Three"], f"Alt+Down/Alt+Up round trip failed: {titles()}")
+    QTest.keyClick(w.list, Qt.Key_Up, Qt.AltModifier)
+    QTest.keyClick(w.list, Qt.Key_Up, Qt.AltModifier)
+    _settle(app)
+    check(titles() == ["One", "Two", "Three"], f"Alt+Up at the top must be a no-op: {titles()}")
+    w.undo()
+    check(titles() == ["Two", "One", "Three"], "keyboard move must be undoable")
+    names = [w.list.item(i).data(Qt.AccessibleTextRole) for i in range(w.list.count())]
+    check(
+        names[0] == "Slide 1 of 3: Two (TITLE)" and names[2] == "Slide 3 of 3: Three (TITLE, hidden)",
+        f"slide accessible names: {names}",
+    )
+    thumb = w.list.itemWidget(w.list.item(1))
+    check(thumb is not None and thumb.accessibleName() == names[1], "thumbnail accessible name missing")
+    w.title.setText("Renamed")
+    check(
+        w.list.item(w.list.currentRow()).data(Qt.AccessibleTextRole).endswith(": Renamed (TITLE)"),
+        "accessible name must follow title edits",
+    )
+    check(w.list.accessibleName() == "Slides", "slide list accessible name missing")
+    w.dirty = False
+    w.close()
+
+
 def run(m, app, check):
+    check_slide_list_keyboard(m, app, check)
     check_autosave_status(m, app, check)
     check_presenter_idle(m, app, check)
     check_toolbar(m, app, check)

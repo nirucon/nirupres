@@ -502,6 +502,7 @@ class Main(QMainWindow):
         self.list.setSpacing(5)
         self.list.currentRowChanged.connect(self.select)
         self.list.reordered.connect(self.drag_reorder)
+        self.list.moveRequested.connect(self.move_slide_keyboard)
         lv.addWidget(self.list)
         plus = QPushButton("+ ADD SLIDE")
         plus.clicked.connect(self.add)
@@ -1399,6 +1400,8 @@ class Main(QMainWindow):
             ("Copy slide", self.copy_slides),
             ("Paste slide", self.paste_slides),
             ("Add same layout", self.add_same_layout),
+            ("Move slide up · Alt+Up", lambda: self.move_slide_keyboard(-1)),
+            ("Move slide down · Alt+Down", lambda: self.move_slide_keyboard(1)),
             ("Deck settings", self.deck_settings),
             ("File workflow settings", self.file_workflow_settings),
             ("Import NIRUPRES Markdown", self.import_markdown),
@@ -1501,6 +1504,7 @@ class Main(QMainWindow):
         th = self.data.get("theme", "B&W")
         for i, s in enumerate(self.data["slides"]):
             it = QListWidgetItem()
+            it.setData(Qt.AccessibleTextRole, self.slide_accessible_text(i))
             self.list.addItem(it)
             if self.outline_mode:
                 flags = ("  [HIDDEN]" if s.get("hidden") else "") + (
@@ -1525,6 +1529,7 @@ class Main(QMainWindow):
                         self.data.get("footerSize", "MEDIUM"),
                     ),
                 )
+                self.list.itemWidget(it).setAccessibleName(self.slide_accessible_text(i))
         self.list.blockSignals(False)
         self.count.setText(str(total))
         self.theme.blockSignals(True)
@@ -1766,6 +1771,9 @@ class Main(QMainWindow):
         if i < 0:
             return
         it = self.list.item(i)
+        if it is None:
+            return
+        it.setData(Qt.AccessibleTextRole, self.slide_accessible_text(i))
         if not self.outline_mode:
             self.list.setItemWidget(
                 it,
@@ -1780,6 +1788,7 @@ class Main(QMainWindow):
                     self.data.get("footerSize", "MEDIUM"),
                 ),
             )
+            self.list.itemWidget(it).setAccessibleName(self.slide_accessible_text(i))
         else:
             self.refresh(i)
 
@@ -2175,6 +2184,24 @@ class Main(QMainWindow):
             self.move_slide(1)
             return
         super().keyPressEvent(e)
+
+    def slide_accessible_text(self, i):
+        slides = self.data.get("slides", [])
+        s = slides[i] if 0 <= i < len(slides) else {}
+        title = _plain_markup(s.get("title") or "") or "untitled"
+        hidden = ", hidden" if s.get("hidden") else ""
+        return f"Slide {i + 1} of {len(slides)}: {title} ({s.get('layout', 'TITLE')}{hidden})"
+
+    def move_slide_keyboard(self, d):
+        i = self.list.currentRow()
+        j = i + d
+        if i < 0 or j < 0 or j >= len(self.data["slides"]):
+            return
+        self.move_slide(d)
+        self.list.setFocus(Qt.OtherFocusReason)
+        text = self.slide_accessible_text(j)
+        self.list.setAccessibleDescription(f"Moved. {text}")
+        self.statusBar().showMessage(f"Moved to {text}", 2500)
 
     def move_slide(self, d):
         i = self.list.currentRow()

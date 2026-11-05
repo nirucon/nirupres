@@ -94,12 +94,23 @@ from .foundation import (
 
 class SlideList(QListWidget):
     reordered = Signal(int, int)
+    moveRequested = Signal(int)
 
     def __init__(self):
         super().__init__()
         self.setSelectionMode(QListWidget.ExtendedSelection)
         self.setDragDropMode(QListWidget.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
+        self.setAccessibleName("Slides")
+        self.setAccessibleDescription("Alt+Up and Alt+Down move the current slide")
+
+    def keyPressEvent(self, e):
+        # Keyboard reordering (2.2, U5): the drag-and-drop move without a mouse.
+        if e.modifiers() == Qt.AltModifier and e.key() in (Qt.Key_Up, Qt.Key_Down):
+            self.moveRequested.emit(-1 if e.key() == Qt.Key_Up else 1)
+            e.accept()
+            return
+        super().keyPressEvent(e)
 
     def dropEvent(self, e):
         old = self.currentRow()
