@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from gate_compat import QTest
+from PySide6.QtGui import QFontDatabase
 
 
 def _main(m, profile=None):
@@ -158,7 +159,9 @@ def check_label_fit(m, app, check):
                 inner.width() >= inner.minimumSizeHint().width(),
                 f"inspector controls squeezed at {width}x{height} ({label})",
             )
-            if palette is None:
+            # The no-scroll budget is defined for the theme font (Noto Sans, as on
+            # NIRUX hosts); wider fallback fonts may scroll but never squeeze.
+            if palette is None and "Noto Sans" in QFontDatabase.families():
                 check(
                     inner.width() <= scroll.viewport().width(),
                     f"inspector needs horizontal scrolling at {width}x{height} (default font)",

@@ -30,7 +30,7 @@ jobs:
           test "$(sed -n 's/^EXPECTED_VERSION = "\(.*\)"/\1/p' tests/release_gate.py)" = "$version"
       - name: Shell syntax
         run: for f in install.sh run.sh scripts/test.sh; do sh -n "$f"; done
-      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 fonts-noto-core fonts-noto-mono
       - run: pip install -r requirements.txt
       - run: python3 -m compileall -q nirupres tests
       - run: QT_QPA_PLATFORM=offscreen PYTHONPATH=. python3 tests/release_gate.py
