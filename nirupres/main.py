@@ -1068,12 +1068,6 @@ class Main(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def closeEvent(self, event):
-        if self.talk_session is not None:
-            self.talk_session.abort()
-            self.talk_session = None
-        super().closeEvent(event)
-
     def set_side_panel(self, which, visible, from_toggle=False):
         panel = self.left_panel if which == "left" else self.right_panel
         toggle = self.showleft if which == "left" else self.showright
@@ -2850,6 +2844,11 @@ class Main(QMainWindow):
 
     def closeEvent(self, e):
         if self.confirm_discard():
+            # A second closeEvent definition used to shadow this Talk cleanup,
+            # leaving NIRUCLIP recording after the editor closed.
+            if self.talk_session is not None:
+                self.talk_session.abort()
+                self.talk_session = None
             if self.presenter is not None:
                 try:
                     self.presenter.close_session()
