@@ -2,8 +2,9 @@
 
 2.2.0 keeps project format 9 and Markdown format 2; no conversion is needed and
 decks saved by 2.2 still open in 2.1.x. Run `./install.sh` from the release (or
-`nirux extras update`). The installer keeps the previous generation for
-rollback and preserves `~/.local/share/nirupres` user data.
+`nirux extras update`). The installer keeps a rollback snapshot of the
+previous code until the new release has passed its checks, and preserves
+`~/.local/share/nirupres` user data.
 
 - **Profile:** upgrading from 2.1 or earlier writes
   `~/.local/share/nirupres/profile.json` with the Uddevalla profile, so new
