@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.1 — Installer and uninstaller
+
+- **Uninstaller.** New `uninstall.sh` (and `nirux extras uninstall nirupres`):
+  removes the program and keeps preferences and autosave; `--purge` removes
+  those too. Decks are never touched.
+- **Fresh Debian.** The installer installs `python3-venv` when venv support
+  is missing (with a prompt in a terminal, or with `NIRUPRES_ASSUME_YES=1` /
+  `NIRUX_ASSUME_YES=1` unattended) instead of failing with "Could not create
+  Python virtual environment".
+- **Half-created venv.** A virtual environment left without pip by a failed
+  first attempt is rebuilt instead of failing on every later install.
+
 ## 2.2.0 — UX and maintainability
 
 Project format 9 and Markdown format 2 are unchanged; existing decks open and

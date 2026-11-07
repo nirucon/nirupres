@@ -177,21 +177,16 @@ Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.
 
 ## Uninstall
 
-There is no uninstall script. To remove the program but keep your settings
-and recovery data:
-
 ```sh
-rm -f ~/.local/bin/nirupres ~/.local/share/applications/nirupres.desktop \
-      ~/.local/share/icons/hicolor/scalable/apps/nirupres.svg \
-      ~/.local/share/mime/packages/nirupres.xml
-rm -rf ~/.local/share/nirupres/nirupres ~/.local/share/nirupres/tests \
-       ~/.local/share/nirupres/.venv
-rm -f ~/.local/share/nirupres/run.sh ~/.local/share/nirupres/requirements.txt
+nirux extras uninstall nirupres            # with NIRUX
+./uninstall.sh                             # standalone, from a checkout
+./uninstall.sh --purge                     # also delete preferences and autosave
 ```
 
-Remove `~/.local/share/nirupres` entirely only if you also want to erase
-preferences and the autosave. Your `.nirupres` decks are wherever you saved
-them and are not affected.
+A normal uninstall removes the launcher, desktop entry, icon, MIME type, the
+application code and its virtual environment, and keeps your preferences and
+autosave in `~/.local/share/nirupres`. Your `.nirupres` decks are wherever you
+saved them and are not affected.
 
 ## Building from source
 

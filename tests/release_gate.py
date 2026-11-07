@@ -23,7 +23,7 @@ APP_INSTANCE = QApplication.instance() or QApplication([])
 import nirupres
 from nirupres import main as m
 
-EXPECTED_VERSION = "2.2.0"
+EXPECTED_VERSION = "2.2.1"
 
 
 def check(cond, msg):

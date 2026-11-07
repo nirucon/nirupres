@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="2.2.0"
+VERSION="2.2.1"
 SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEST="$DATA_ROOT/nirupres"
@@ -47,8 +47,29 @@ mkdir -p -- "$DATA_ROOT" "$BIN_DIR" "$APP_DIR" "$ICON_DIR" "$MIME_DIR" "$DEST" |
 if [ -x "$VENV/bin/python" ] && [ -f "$DEST/nirupres/__init__.py" ]; then OLD_VERSION=$( (cd / && PYTHONPATH="$DEST" "$VENV/bin/python" -c 'import nirupres; print(nirupres.__version__)') 2>/dev/null || printf unknown); fi
 printf '  Installed ...... %s\n  Target ......... %s\n\n' "$OLD_VERSION" "$VERSION"
 
+# Debian ships venv's ensurepip in python3-venv; Arch and Void include it with
+# Python. Without it `python3 -m venv` leaves a venv that has no pip.
+ensure_venv_support() {
+    python3 -c 'import ensurepip' >/dev/null 2>&1 && return 0
+    command -v apt-get >/dev/null 2>&1 || fail "Python venv support (ensurepip) is missing; install it with your package manager."
+    if [ "${NIRUPRES_ASSUME_YES:-${NIRUX_ASSUME_YES:-0}}" != 1 ]; then
+        [ -t 0 ] || fail "python3-venv is missing. Install it with: sudo apt-get install python3-venv (or rerun with NIRUPRES_ASSUME_YES=1)."
+        printf '      python3-venv is required. Install it with sudo apt-get? [Y/n] '
+        read -r answer || answer=n
+        case "$answer" in [nN]*) fail "python3-venv is required." ;; esac
+    fi
+    printf '      Installing python3-venv...\n'
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv || fail "Could not install python3-venv."
+}
+
 printf '[1/6] Checking Python environment...\n'
+# A venv whose creation failed half-way has a python but no pip; rebuild it.
+if [ -x "$VENV/bin/python" ] && ! "$VENV/bin/python" -m pip --version >/dev/null 2>&1; then
+    printf '      Rebuilding an incomplete virtual environment...\n'
+    rm -rf -- "$VENV"
+fi
 if [ ! -x "$VENV/bin/python" ]; then
+    ensure_venv_support
     printf '      Creating virtual environment...\n'
     python3 -m venv "$VENV" || fail "Could not create Python virtual environment. Ensure venv support is installed."
 fi

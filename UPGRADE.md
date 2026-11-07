@@ -1,4 +1,6 @@
-# Upgrading to NIRUPRES 2.2.0
+# Upgrading to NIRUPRES 2.2.x
+
+2.2.1 changes only the installer and adds `uninstall.sh`.
 
 2.2.0 keeps project format 9 and Markdown format 2; no conversion is needed and
 decks saved by 2.2 still open in 2.1.x. Run `./install.sh` from the release (or
