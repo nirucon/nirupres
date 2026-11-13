@@ -20,15 +20,23 @@ example on Arch/Omarchy with Wayland.
 
 ## Features
 
-- 25 slide layouts (title, statement, bullets, agenda, image, split, compare,
-  quote, big number, KPI, process, timeline, matrix, table, video, full bleed
-  and more) and 17 slide themes, including Satie, Carl Larsson and the
-  Uddevalla family.
+- 28 slide layouts (title, statement, bullets, agenda, image, image with
+  caption, split, two and three columns, compare, quote, big number, KPI,
+  process, timeline, matrix, comparison table, code, video, full bleed and
+  more) and 17 slide themes, including Satie, Carl Larsson and the Uddevalla
+  family.
+- Text always stays inside its box: each text shrinks to fit (in pixels, the
+  same on every screen and export), and only if it is still too long it is
+  cut with an ellipsis. Lists that are too long show "+N more". Deck health
+  renders every slide and names the slide that does not fit, and the slide
+  list marks it with a **FIT** badge.
 - Opt-in organization profiles for new decks: **Neutral** (default on fresh
   installations) or **Uddevalla** (logo, starters, title preset).
 - Speaker notes, a presenter window and an audience window on the screen you
   choose (Display Setup), with spotlight, focus, zoom, curtain, black/white
   screen, pause and jump-to-slide.
+- Safe online presenting (Teams, Meet, Zoom), on a laptop alone or docked:
+  see [Presenting in Teams, Meet or Zoom](#presenting-in-teams-meet-or-zoom).
 - PDF export (also from the command line) and image-based PowerPoint export.
   PowerPoint slides are rasterized; their content is not natively editable.
 - Markdown import/export in a documented format
@@ -128,9 +136,52 @@ While presenting:
 | `Z` | Zoom |
 | `P` | Pause |
 | `Esc` | End the presentation (press again to skip the fade) |
+| `Ctrl+-` / `Ctrl++` | Smaller / larger speaker notes (also the A− / A+ buttons; remembered) |
 
 Clicking the audience window goes forward on the right half and back on the
 left half.
+
+## Presenting in Teams, Meet or Zoom
+
+NIRUPRES has two windows while you present, and their names say what they are:
+
+| Window title | What it is |
+|---|---|
+| `AUDIENCE · share this · NIRUPRES` | Only the slides. This is the one you share. |
+| `PRIVATE presenter · do not share` | Your presenter view with notes, next slide and timer. It has a red **PRIVATE** bar, so it is easy to spot even in a picker thumbnail. |
+
+**On a laptop alone:** press `F5` (or **Online** in the toolbar). With one
+screen NIRUPRES asks whether you want the **Laptop presenter** (the presenter
+view fills the screen and covers a 16:9 audience window) or **Slides only**
+(for a projector that mirrors your screen). Tick *Remember my choice* to skip
+the question; **Presenter View…** asks again.
+
+**Docked with more screens:** **Presenter View…** puts the audience fullscreen
+on the screen you choose and the presenter view on the laptop or editor screen.
+
+**Share check:** before an online presentation starts, NIRUPRES tells you
+exactly what to pick: in Teams click **Share**, open the **Window** tab and pick
+`AUDIENCE · share this · NIRUPRES`. The audience window flashes a green border
+and a *SHARED WINDOW* badge for 5 seconds, so you can see in the Teams preview
+that the right window is shared, and you are warned if the audience window is
+hidden (a hidden shared window freezes). Then press **Start presenting**; the
+timer starts there.
+
+While you present:
+
+- The editor is hidden and comes back when you end the presentation.
+- You can switch workspaces (for example to Teams) and come back; the audience
+  keeps seeing the current slide, and the arrow keys work again at once. On
+  NIRUWM the audience window stays mapped on a hidden workspace
+  (`_NIRUWM_KEEP_MAPPED`), so a share never freezes. The presenter view warns
+  if the audience window is hidden anyway.
+- With NIRUX, NIRUPRES turns on presenting mode (`niructl present on --pid`):
+  Do Not Disturb is on and NIRUBAR hides private modules. It is turned off when
+  you end, and NIRUWM turns it off by itself if NIRUPRES crashes. With an older
+  NIRUWM it uses `niructl dnd on` and restores your previous Do Not Disturb
+  state, also on the next start after a crash.
+- Nothing private is ever drawn in the audience window: no notes, timer or
+  next slide.
 
 ## Configuration
 
@@ -143,7 +194,10 @@ stored as small JSON files in the data root:
   original monochrome Noir chrome is used.
 - **Profile:** **New → Profile** or `Ctrl+K` → "Profile". It only affects new
   decks; every deck keeps its own logo setting.
-- **Display Setup:** choose the presenter and audience screens.
+- **Display Setup:** choose the presenter and audience screens. The same
+  screen for both means laptop presenter mode.
+- **One screen:** the remembered F5 choice (laptop presenter or slides only)
+  is stored in `display.json`; **Presenter View…** asks again.
 - `NIRUPRES_TALK_DIR`: where Talk mode writes recordings (default `~/Videos`).
 
 Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.md).
@@ -157,6 +211,8 @@ Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.
 | `~/.local/share/nirupres/autosave.json` | Recovery file for an unsaved deck (removed on save, open or normal close) |
 | `~/.local/share/nirupres/recent.json`, `display.json`, `file-workflow.json`, `ui.json` | Recent files, display, file-dialog and inspector preferences |
 | `~/.local/share/nirupres/profile.json` | Organization profile |
+| `~/.local/share/nirupres/presenter.json` | Speaker notes text size |
+| `~/.local/share/nirupres/presenting.json` | Only while presenting: the Do Not Disturb state to restore after a crash |
 | `~/.local/share/applications/nirupres.desktop`, `~/.local/share/mime/packages/nirupres.xml` | Desktop entry and the `application/x-nirupres` MIME type |
 | `~/Videos/NIRUPRES-*.mkv` | Talk recordings, with `.chapters.json` and `.srt` |
 
@@ -174,6 +230,12 @@ Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.
   command instead of pretending to record.
 - **The editor does not follow NIRUX.** Run `nirupres --check-config`; it
   prints where the chrome theme came from.
+- **Teams shows a frozen slide.** The audience window was hidden (minimised or
+  on a hidden workspace with an older window manager). Show it again; the
+  presenter view and the Share check warn about this.
+- **A slide has a FIT badge.** Its text did not fit and was cut or some items
+  were hidden. Open Deck health (`Ctrl+K`) for the details, then shorten the
+  text or split the slide.
 
 ## Uninstall
 

@@ -76,6 +76,9 @@ from PySide6.QtWidgets import (
 )
 
 from .foundation import *
+from . import x11props
+from .presenting import PresentingMode
+import time
 from .foundation import (
     _safe_zip_name,
     _validate_project_data,
@@ -216,6 +219,7 @@ class Thumb(QWidget):
         footer_text="",
         footer_align="LEFT",
         footer_size="MEDIUM",
+        deck=None,
     ):
         super().__init__()
         l = QVBoxLayout(self)
@@ -235,10 +239,29 @@ class Thumb(QWidget):
             footer_size=footer_size,
         )
         l.addWidget(c)
+        self.fit_issues = []
+        if deck is not None:
+            try:
+                self.fit_issues = slide_fit_issues(s, deck, i)
+            except Exception:
+                self.fit_issues = []
+        if self.fit_issues:
+            # Deck health badge: the slide has text that does not fit.
+            badge = QLabel("FIT", c)
+            badge.setObjectName("fitBadge")
+            badge.setStyleSheet(
+                "QLabel#fitBadge{background:#E8A33D;color:#111;font-size:9px;font-weight:900;"
+                "padding:1px 4px;border-radius:2px}"
+            )
+            badge.adjustSize()
+            badge.move(c.width() - badge.width() - 3, 3)
+            badge.setToolTip("Text does not fit:\n" + "\n".join(self.fit_issues))
+            self.setToolTip("Deck health: " + "; ".join(self.fit_issues))
         flags = (
             ("  ◇" if s.get("notes") else "")
             + ("  ⊘" if s.get("hidden") else "")
             + ("  ●" if s.get("themeOverride", "DECK") != "DECK" else "")
+            + ("  ⚠" if self.fit_issues else "")
         )
         q = QLabel(f'{i+1:02d}  {(s.get("title") or s.get("layout"))[:20]}{flags}')
         q.setObjectName("thumbtitle")
@@ -495,6 +518,63 @@ class PresenterFocusOverlay(QWidget):
 
 
 KEN_BURNS_MS = 18000.0
+AUDIENCE_TITLE = "AUDIENCE · share this · NIRUPRES"
+PRESENTER_TITLE = "PRIVATE presenter · do not share"
+SHARE_FLASH_MS = 5000
+
+
+class ShareFlashOverlay(QWidget):
+    """Coloured border and corner badge that marks the audience window.
+
+    Shown for a few seconds by the Share check so the presenter can see in the
+    Teams preview that the right window is shared. It contains no private
+    information, so it is harmless if the audience sees it.
+    """
+
+    COLOR = QColor("#19C37D")
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+        self.hide()
+
+    def flash(self, ms=SHARE_FLASH_MS):
+        self.setGeometry(self.parentWidget().rect())
+        self.show()
+        self.raise_()
+        self._timer.start(ms)
+
+    def paintEvent(self, e):
+        q = QPainter(self)
+        q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        r = QRectF(self.rect())
+        bw = max(8.0, min(r.width(), r.height()) * 0.018)
+        pen_rect = r.adjusted(bw / 2, bw / 2, -bw / 2, -bw / 2)
+        pen = q.pen()
+        pen.setColor(self.COLOR)
+        pen.setWidthF(bw)
+        q.setPen(pen)
+        q.setBrush(Qt.NoBrush)
+        q.drawRect(pen_rect)
+        f = QFont("Noto Sans")
+        f.setPixelSize(int(max(14, r.height() * 0.035)))
+        f.setWeight(QFont.Weight.Black)
+        q.setFont(f)
+        label = "✓  SHARED WINDOW · AUDIENCE"
+        fm = QFontMetrics(f)
+        bwid = fm.horizontalAdvance(label) + f.pixelSize() * 1.4
+        bh = f.pixelSize() * 2.0
+        badge = QRectF(bw * 1.6, bw * 1.6, bwid, bh)
+        q.setPen(Qt.NoPen)
+        q.setBrush(self.COLOR)
+        q.drawRoundedRect(badge, 4, 4)
+        q.setPen(QColor("#04130C"))
+        q.drawText(badge, Qt.AlignCenter, label)
+        q.end()
 
 
 def _web_video_url(url):
@@ -632,7 +712,10 @@ class Audience(QMainWindow):
         # 2.2 (U3): the 25 fps redraw runs only while a KEN BURNS background is
         # actually moving and visible; it used to repaint every slide forever.
         self._curtain_on = False
-        self.setWindowTitle("NIRUPRES — Audience" + (" · SHARE THIS WINDOW" if online else ""))
+        # 2.3: the important words come first, because screen-share pickers
+        # (Teams in Chromium/Helium) truncate long window titles.
+        self.setWindowTitle(AUDIENCE_TITLE)
+        self._share_flash = None
         self._opening = False
         self._curtain = None
         self._zoom_overlay = None
@@ -1007,6 +1090,11 @@ class Audience(QMainWindow):
             self._update_motion_timer()
             self.focus_overlay.raise_()
 
+    def flash_share(self, ms=SHARE_FLASH_MS):
+        if self._share_flash is None:
+            self._share_flash = ShareFlashOverlay(self.view)
+        self._share_flash.flash(ms)
+
     def eventFilter(self, obj, event):
         if obj is self.view and event.type() == QEvent.Type.MouseMove:
             self.focus_overlay.set_point(event.position())
@@ -1029,6 +1117,9 @@ class Audience(QMainWindow):
         self.pause_overlay.setGeometry(self.view.rect())
         if self._paused:
             self.pause_overlay.raise_()
+        if self._share_flash is not None and self._share_flash.isVisible():
+            self._share_flash.setGeometry(self.view.rect())
+            self._share_flash.raise_()
         # Video geometry followed the old 25 fps redraw; keep it on resize.
         if self._video_widget is not None and 0 <= self.i < len(self.data["slides"]):
             self._video_widget.setGeometry(self._video_rect(self.data["slides"][self.i]))
@@ -1120,7 +1211,7 @@ class DisplaySetup(QDialog):
     def check(self):
         same = self.presenter.currentData() == self.audience.currentData()
         self.warn.setText(
-            "Presenter and Audience are set to the same display. Presenter View will not be shown."
+            "Same display: laptop presenter mode. Presenter View fills this screen and you share the window “AUDIENCE · share this · NIRUPRES” in Teams, Meet or Zoom."
             if same
             else "Only the slide is shown on Audience. Controls, notes, timer and next-slide preview stay on Presenter."
         )
@@ -1138,12 +1229,280 @@ class DisplaySetup(QDialog):
         return self.screens[pi], self.screens[ai]
 
 
+PRESENTER_PREFS = DATA / "presenter.json"
+PRIVATE_RED = "#C4161C"
+PRESENTER_QSS = """
+QMainWindow#presenterWindow{background:#080808}
+QWidget#presenterHost{background:#080808}
+QWidget#presenterHost QLabel{color:#a8a8a8;background:transparent}
+QWidget#presenterHost QLabel#privateBar{background:__RED__;color:#ffffff;font-weight:900;letter-spacing:2px;padding:0 16px}
+QWidget#presenterHost QLabel#presenterMode{color:#e8e8e8;font-weight:900;letter-spacing:1px}
+QWidget#presenterHost QLabel#presenterState{color:#d0d0d0;font-weight:800}
+QWidget#presenterHost QLabel#presenterState[warn="true"]{color:#ffb020}
+QWidget#presenterHost QLabel#presenterLabel{font-family:"Noto Sans Mono",monospace;font-size:11px;font-weight:800;color:#7a7a7a;letter-spacing:1px}
+QWidget#presenterHost QLabel#presenterTimer{color:#f4f2ed;font-family:"Noto Sans Mono",monospace;font-weight:800}
+QWidget#presenterHost QLabel#presenterClock{color:#a8a8a8;font-family:"Noto Sans Mono",monospace;font-weight:600}
+QWidget#presenterHost QLabel#presenterPace{color:#a8a8a8;font-family:"Noto Sans Mono",monospace}
+QWidget#presenterHost QLabel#presenterPosition{color:#e8e8e8;font-family:"Noto Sans Mono",monospace;font-weight:800}
+QWidget#presenterHost QLabel#nextTitle{color:#d8d8d8;font-weight:700}
+QTextEdit#presenterNotes{background:#0e0e0e;color:#ececec;border:1px solid #262626;padding:10px;selection-background-color:#eee;selection-color:#090909}
+QPushButton{background:#121212;color:#e8e8e8;border:1px solid #303030;padding:7px 14px;font-weight:700;min-height:20px}
+QPushButton:hover{background:#202020;border-color:#555}
+QPushButton:focus{border:1px solid #9a9a9a}
+QPushButton#endPresentation{border-color:#5a2a2a}
+QPushButton#endPresentation:hover{background:#2a1212;border-color:#a33}
+QPushButton#notesSize{padding:4px 10px;min-width:34px}
+""".replace("__RED__", PRIVATE_RED)
+
+
+def _load_presenter_prefs():
+    try:
+        data = json.loads(PRESENTER_PREFS.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_presenter_prefs(prefs):
+    try:
+        PRESENTER_PREFS.parent.mkdir(parents=True, exist_ok=True)
+        PRESENTER_PREFS.write_text(json.dumps(prefs), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _px(widget, px, weight=None):
+    f = QFont(widget.font())
+    f.setPixelSize(max(6, int(px)))
+    if weight is not None:
+        f.setWeight(weight)
+    widget.setFont(f)
+
+
+class PresenterBody(QWidget):
+    """Presenter View body with a layout that adapts to the window size.
+
+    Current slide, next slide (collapses to a title line when there is no
+    room), a big timer and clock, and a notes pane that always gets at least
+    a third of the window height.
+    """
+
+    def __init__(self, presenter):
+        super().__init__()
+        self.p = presenter
+        self.now = SlideCanvas()
+        self.next = SlideCanvas()
+        self.now.setMinimumSize(1, 1)
+        self.next.setMinimumSize(1, 1)
+        self.now_label = QLabel("CURRENT")
+        self.next_label = QLabel("NEXT")
+        for lab in (self.now_label, self.next_label):
+            lab.setObjectName("presenterLabel")
+        self.next_title = QLabel()
+        self.next_title.setObjectName("nextTitle")
+        self.next_title.setWordWrap(True)
+        self.timer = QLabel("00:00")
+        self.timer.setObjectName("presenterTimer")
+        self.timer.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.pace = QLabel("")
+        self.pace.setObjectName("presenterPace")
+        self.clock = QLabel("")
+        self.clock.setObjectName("presenterClock")
+        self.position = QLabel("")
+        self.position.setObjectName("presenterPosition")
+        self.notes_label = QLabel("SPEAKER NOTES")
+        self.notes_label.setObjectName("presenterLabel")
+        self.smaller = QPushButton("A−")
+        self.larger = QPushButton("A+")
+        for b in (self.smaller, self.larger):
+            b.setObjectName("notesSize")
+            b.setFocusPolicy(Qt.NoFocus)
+        self.smaller.setToolTip("Smaller notes · Ctrl+−")
+        self.larger.setToolTip("Larger notes · Ctrl++")
+        self.notes = QTextEdit()
+        self.notes.setObjectName("presenterNotes")
+        self.notes.setReadOnly(True)
+        self.notes.setFocusPolicy(Qt.NoFocus)
+        for w in (self.now, self.next, self.now_label, self.next_label, self.next_title,
+                  self.timer, self.pace, self.clock, self.position, self.notes_label,
+                  self.smaller, self.larger, self.notes):
+            w.setParent(self)
+        self.compact_next = False
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.relayout()
+
+    def relayout(self):
+        W, H = self.width(), self.height()
+        if W < 10 or H < 10:
+            return
+        gap = max(10, int(min(W, H) * 0.016))
+        total_h = max(H, self.window().height())
+        notes_h = max(int(total_h / 3), 140)
+        notes_h = min(notes_h, H - 160)
+        top_h = H - notes_h - gap
+        label_h = 18
+        # Current slide: as large as fits beside a right column of >= 30 %.
+        min_right = max(240, int(W * 0.30))
+        cw = min(W - min_right - gap, int((top_h - label_h) * 16 / 9))
+        cw = max(160, cw)
+        ch = int(cw * 9 / 16)
+        self.now_label.setGeometry(0, 0, cw, label_h)
+        self.now.setGeometry(0, label_h, cw, ch)
+        rx = cw + gap
+        rw = W - rx
+        timer_px = max(30, min(120, int(top_h * 0.17), int(rw * 0.16)))
+        _px(self.timer, timer_px)
+        _px(self.clock, max(16, int(timer_px * 0.42)))
+        _px(self.pace, max(13, int(timer_px * 0.24)))
+        _px(self.position, max(16, int(timer_px * 0.40)))
+        y = 0
+        self.timer.setGeometry(rx, y, rw, int(timer_px * 1.25))
+        y += int(timer_px * 1.25)
+        pace_h = int(self.pace.font().pixelSize() * 1.5) if self.pace.text() else 0
+        self.pace.setGeometry(rx, y, rw, pace_h)
+        self.pace.setVisible(bool(pace_h))
+        y += pace_h
+        row_h = int(self.clock.font().pixelSize() * 1.5)
+        self.clock.setGeometry(rx, y, rw // 2, row_h)
+        self.position.setGeometry(rx + rw // 2, y, rw - rw // 2, row_h)
+        self.position.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        y += row_h + gap
+        avail = top_h - y - label_h
+        nw = min(rw, int(avail * 16 / 9))
+        nh = int(nw * 9 / 16)
+        self.compact_next = nw < 200 or nh < 100
+        self.next_label.setGeometry(rx, y, rw, label_h)
+        if self.compact_next:
+            self.next.hide()
+            self.next_title.show()
+            _px(self.next_title, max(14, int(timer_px * 0.30)))
+            self.next_title.setGeometry(rx, y + label_h, rw, max(30, avail))
+            self.next_title.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        else:
+            self.next_title.hide()
+            self.next.show()
+            self.next.setGeometry(rx, y + label_h, nw, nh)
+        ny = top_h + gap
+        bh = 30
+        self.notes_label.setGeometry(0, ny, W - 120, bh)
+        self.smaller.setGeometry(W - 104, ny, 48, bh - 2)
+        self.larger.setGeometry(W - 52, ny, 52, bh - 2)
+        self.notes.setGeometry(0, ny + bh + 4, W, max(40, H - ny - bh - 4))
+
+
+class ShareCheckDialog(QDialog):
+    """Share check before an online presentation starts."""
+
+    def __init__(self, presenter, audience):
+        super().__init__(presenter)
+        self.audience = audience
+        self.setObjectName("shareCheck")
+        self.setWindowTitle("Share check · NIRUPRES")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        self.setStyleSheet(
+            "QDialog#shareCheck{background:#0b0b0b;border:2px solid #19C37D}"
+            "QLabel{color:#d8d8d8;font-size:14px} QLabel#shareHead{color:#fff;font-size:20px;"
+            "font-weight:900;letter-spacing:1px} QLabel#sharePick{background:#19C37D;color:#04130C;"
+            "font-size:17px;font-weight:900;padding:8px 12px} QLabel#shareWarn{color:#ffb020;"
+            "font-weight:800} QLabel#shareNever{color:#ff8a80;font-weight:700}"
+            "QPushButton{background:#151515;color:#eee;border:1px solid #3a3a3a;padding:8px 16px;"
+            "font-weight:800} QPushButton:default{background:#e8e8e8;color:#090909}"
+        )
+        v = QVBoxLayout(self)
+        v.setSpacing(10)
+        head = QLabel("SHARE CHECK")
+        head.setObjectName("shareHead")
+        v.addWidget(head)
+        steps = QLabel(
+            "1.  In Teams, click <b>Share</b>.<br>"
+            "2.  Open the <b>Window</b> tab (not Entire screen).<br>"
+            "3.  Pick this entry:"
+        )
+        steps.setTextFormat(Qt.RichText)
+        v.addWidget(steps)
+        pick = QLabel(AUDIENCE_TITLE)
+        pick.setObjectName("sharePick")
+        v.addWidget(pick)
+        never = QLabel(f"Never pick “{PRESENTER_TITLE}” (red bar) or Entire screen.")
+        hop = QLabel(
+            "You can switch workspaces; the audience keeps seeing the slide. "
+            "Come back here and the arrow keys work at once."
+        )
+        hop.setWordWrap(True)
+        never.setObjectName("shareNever")
+        never.setWordWrap(True)
+        v.addWidget(never)
+        v.addWidget(hop)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        v.addWidget(self.status)
+        row = QHBoxLayout()
+        self.flash_button = QPushButton("Flash audience window")
+        self.flash_button.setAutoDefault(False)
+        self.flash_button.clicked.connect(self.flash)
+        cancel = QPushButton("Cancel")
+        cancel.setAutoDefault(False)
+        cancel.clicked.connect(self.reject)
+        start = QPushButton("Start presenting")
+        start.setDefault(True)
+        start.clicked.connect(self.accept)
+        row.addWidget(self.flash_button)
+        row.addStretch()
+        row.addWidget(cancel)
+        row.addWidget(start)
+        v.addLayout(row)
+        self._poll = QTimer(self)
+        self._poll.setInterval(1000)
+        self._poll.timeout.connect(self.refresh)
+        self._poll.start()
+        QTimer.singleShot(250, self.flash)
+        self.refresh()
+
+    def flash(self):
+        self.audience.flash_share(SHARE_FLASH_MS)
+        self.refresh(flashing=True)
+
+    def refresh(self, flashing=False):
+        viewable = x11props.is_viewable(self.audience)
+        if viewable is False or not self.audience.isVisible():
+            self.status.setObjectName("shareWarn")
+            self.status.setText(
+                "⚠  The audience window is hidden (another workspace or minimised). "
+                "A shared hidden window freezes. Bring it back before you share."
+            )
+        else:
+            self.status.setObjectName("")
+            self.status.setText(
+                "The audience window shows a green border and a SHARED WINDOW badge for "
+                "5 seconds. Check that the Teams preview shows it."
+                if flashing
+                else "Press Flash to mark the audience window again."
+            )
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+
+    def done(self, r):
+        self._poll.stop()
+        super().done(r)
+
+
 class Presenter(QMainWindow):
     finished = Signal()
     slideChanged = Signal(int)
 
     def __init__(
-        self, data, start=0, presenter_screen=None, audience_screen=None, online=False, talk=False
+        self,
+        data,
+        start=0,
+        presenter_screen=None,
+        audience_screen=None,
+        online=False,
+        talk=False,
+        style=None,
+        share_check=False,
     ):
         super().__init__()
         self.data = data
@@ -1152,6 +1511,8 @@ class Presenter(QMainWindow):
         self.talk_stop = None
         self._closing = False
         self._black_hold = False
+        self._share_checking = False
+        self.share_dialog = None
         self.curtain = False
         self.paused = False
         self._paused_total_ms = 0
@@ -1161,6 +1522,8 @@ class Presenter(QMainWindow):
         self.clock = QElapsedTimer()
         self.clock.start()
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setObjectName("presenterWindow")
+        self.presenting_mode = PresentingMode()
         screens = QApplication.screens()
         primary = QApplication.primaryScreen()
         presenter_screen = presenter_screen or primary
@@ -1177,16 +1540,23 @@ class Presenter(QMainWindow):
         # Create native windows while still hidden, bind each QWindow to its target QScreen,
         # then enter fullscreen. Mapping first and moving later is unreliable under Wayland/Hyprland.
         self.audience.create()
+        # Own WM_CLASS per window and _NIRUWM_KEEP_MAPPED: NIRUWM keeps the
+        # audience window mapped (live in a share) when its workspace is hidden.
+        x11props.set_window_identity(self.audience, "nirupres-audience", "NIRUPRES", True)
         if self.audience.windowHandle():
             self.audience.windowHandle().setScreen(audience_screen)
         if online:
-            # Online mode deliberately uses a normal top-level Audience window. Teams,
-            # Meet, Zoom and PipeWire portals can share this window without exposing notes.
+            # Online/laptop mode: a normal 16:9 top-level Audience window that
+            # Teams/Meet/Zoom share as a window. The app never resizes it away
+            # from 16:9; the presenter view covers it on the same screen.
             ag = audience_screen.availableGeometry()
-            aw = max(640, min(1100, int(ag.width() * 0.58)))
-            ah = max(360, min(680, int(aw * 9 / 16)))
-            ax = ag.x() + ag.width() - aw - 24
-            ay = ag.y() + 24
+            aw = max(640, min(1280, int(ag.width() * 0.86)))
+            ah = int(aw * 9 / 16)
+            if ah > ag.height() * 0.9:
+                ah = max(360, int(ag.height() * 0.9))
+                aw = int(ah * 16 / 9)
+            ax = ag.x() + (ag.width() - aw) // 2
+            ay = ag.y() + (ag.height() - ah) // 2
             self.audience.setGeometry(ax, ay, aw, ah)
             self.audience.setMinimumSize(640, 360)
             self.audience.show()
@@ -1217,7 +1587,9 @@ class Presenter(QMainWindow):
             QTimer.singleShot(900, place_stop)
         self.dual = online or (len(screens) > 1 and presenter_screen != audience_screen)
         if self.data.get("cinematicOpen", True) and not self.data.get("reduceMotion", False):
-            self.audience.begin_opening()
+            if not share_check:
+                self.audience.begin_opening()
+        self.presenting_mode.start(os.getpid())
         if not self.dual:
             # Single-display mode has no visible Presenter window. The Audience must
             # therefore be the explicit keyboard owner after Wayland has mapped the
@@ -1229,48 +1601,48 @@ class Presenter(QMainWindow):
             QTimer.singleShot(0, self.claim_audience_focus)
             QTimer.singleShot(180, self.claim_audience_focus)
             return
-        self.setWindowTitle("NIRUPRES — Presenter View")
+        self.setWindowTitle(PRESENTER_TITLE)
+        self.setStyleSheet((style or "") + PRESENTER_QSS)
         self.resize(1180, 760)
-        root = QVBoxLayout()
         host = QWidget()
-        host.setLayout(root)
+        host.setObjectName("presenterHost")
+        outer = QVBoxLayout(host)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         self.setCentralWidget(host)
+        # PRIVATE bar: large and red so it is obvious even in a share-picker thumbnail.
+        self.private_bar = QLabel("PRIVATE  ·  NOT FOR SHARING  ·  PRESENTER VIEW")
+        self.private_bar.setObjectName("privateBar")
+        self.private_bar.setAlignment(Qt.AlignCenter)
+        outer.addWidget(self.private_bar)
+        inner = QWidget()
+        root = QVBoxLayout(inner)
+        root.setContentsMargins(16, 10, 16, 12)
+        root.setSpacing(10)
+        outer.addWidget(inner, 1)
         top = QHBoxLayout()
-        self.position_label = QLabel()
-        self.timer = QLabel("00:00")
-        self.audience_state = QLabel(
-            "SHARE: NIRUPRES — AUDIENCE" if online else f"AUDIENCE → {audience_screen.name()}"
-        )
+        mode = QLabel("PRESENTER · ONLINE" if online else "PRESENTER · DOCKED")
+        mode.setObjectName("presenterMode")
+        self.audience_state = QLabel()
         self.audience_state.setObjectName("presenterState")
-        top.addWidget(QLabel("PRESENTER · ONLINE" if online else "PRESENTER"))
-        top.addStretch()
-        top.addWidget(self.audience_state)
-        top.addSpacing(20)
-        top.addWidget(self.position_label)
-        top.addSpacing(20)
-        top.addWidget(self.timer)
+        top.addWidget(mode)
+        top.addSpacing(24)
+        top.addWidget(self.audience_state, 1)
         root.addLayout(top)
-        previews = QHBoxLayout()
-        previews.setSpacing(12)
-        current_col = QVBoxLayout()
-        current_label = QLabel("CURRENT")
-        current_label.setObjectName("presenterLabel")
-        current_col.addWidget(current_label)
-        self.now = SlideCanvas()
-        current_col.addWidget(self.now, 1)
-        next_col = QVBoxLayout()
-        next_label = QLabel("NEXT")
-        next_label.setObjectName("presenterLabel")
-        next_col.addWidget(next_label)
-        self.next = SlideCanvas()
-        next_col.addWidget(self.next, 1)
-        previews.addLayout(current_col, 3)
-        previews.addLayout(next_col, 1)
-        root.addLayout(previews, 3)
+        self.body = PresenterBody(self)
+        self.now = self.body.now
+        self.next = self.body.next
+        self.timer = self.body.timer
+        self.position_label = self.body.position
+        self.notes = self.body.notes
+        self.notes_label = self.body.notes_label
+        root.addWidget(self.body, 1)
         controls = QHBoxLayout()
         prev = QPushButton("‹  PREVIOUS")
         end = QPushButton("✕  END PRESENTATION")
         nxt = QPushButton("NEXT  ›")
+        for b in (prev, end, nxt):
+            b.setFocusPolicy(Qt.NoFocus)
         prev.clicked.connect(lambda: self.navigate(-1))
         nxt.clicked.connect(lambda: self.navigate(1))
         end.clicked.connect(self.close_session)
@@ -1282,35 +1654,132 @@ class Presenter(QMainWindow):
         controls.addStretch()
         controls.addWidget(nxt)
         root.addLayout(controls)
-        self.notes_label = QLabel("SPEAKER NOTES")
-        root.addWidget(self.notes_label)
-        self.notes = QTextEdit()
-        self.notes.setReadOnly(True)
-        self.notes.setMaximumHeight(190)
-        root.addWidget(self.notes)
+        prefs = _load_presenter_prefs()
+        # Default notes size follows the presenter screen; A-/A+ choice is remembered.
+        default_px = max(20, min(40, round(presenter_screen.geometry().height() * 0.028)))
+        self.notes_px = max(12, min(64, int(prefs.get("notesPx", default_px) or default_px)))
+        self._apply_notes_size()
+        self.body.smaller.clicked.connect(lambda: self.notes_zoom(-2))
+        self.body.larger.clicked.connect(lambda: self.notes_zoom(2))
         self.tick = QTimer(self)
         self.tick.timeout.connect(self.update_clock)
         self.tick.start(1000)
+        self.share_watch = QTimer(self)
+        self.share_watch.setInterval(2000)
+        self.share_watch.timeout.connect(self.refresh_audience_state)
+        self.share_watch.start()
         self.create()
+        x11props.set_window_identity(self, "nirupres-presenter", "NIRUPRES")
         if self.windowHandle():
             self.windowHandle().setScreen(presenter_screen)
         if online:
-            pg = presenter_screen.availableGeometry()
-            pw = max(700, min(940, int(pg.width() * 0.47)))
-            ph = max(620, min(820, pg.height() - 48))
-            self.setGeometry(pg.x() + 24, pg.y() + 24, pw, ph)
-            self.show()
+            # Laptop/online mode: the presenter view fills the screen and covers
+            # the audience window, which stays mapped and therefore live.
+            self.setGeometry(presenter_screen.availableGeometry())
+            self.showMaximized()
         else:
             self.setGeometry(presenter_screen.geometry())
             self.showFullScreen()
+        self._resize_private_bar()
+        self.raise_()
         self.draw()
+        self.update_clock()
+        self.refresh_audience_state()
         QApplication.instance().installEventFilter(self)
         # Presenter View/Online has two top-level windows. A single application-level
         # shortcut set prevents duplicate activations while allowing keyboard control
         # from either NIRUPRES presentation window. Audience.keyForward and the event
         # filter remain independent fallbacks for compositor/window-manager quirks.
         self._install_shortcuts(self)
+        for seq, delta in (("Ctrl+-", -2), ("Ctrl++", 2), ("Ctrl+=", 2)):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            sc.activated.connect(lambda d=delta: self.notes_zoom(d))
+            self._shortcuts.append(sc)
         QTimer.singleShot(180, self.claim_focus)
+        if share_check:
+            self._share_checking = True
+            QTimer.singleShot(260, self.open_share_check)
+
+    # 2.3 presenter view helpers -------------------------------------------------
+
+    def open_share_check(self):
+        if self._closing:
+            return
+        d = ShareCheckDialog(self, self.audience)
+        self.share_dialog = d
+        d.finished.connect(self._share_check_done)
+        d.open()
+        d.raise_()
+        d.activateWindow()
+
+    def _share_check_done(self, result):
+        self._share_checking = False
+        self.share_dialog = None
+        if result != QDialog.Accepted:
+            self._finish_session()
+            return
+        # The talk starts now: reset the timer and run the opening fade.
+        self.clock.restart()
+        self._paused_total_ms = 0
+        if self.data.get("cinematicOpen", True) and not self.data.get("reduceMotion", False):
+            self.audience.begin_opening()
+        self.update_clock()
+        self.claim_focus()
+
+    def _resize_private_bar(self):
+        h = max(34, int(self.height() * 0.05))
+        self.private_bar.setFixedHeight(h)
+        _px(self.private_bar, max(14, int(h * 0.48)), QFont.Weight.Black)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "private_bar"):
+            self._resize_private_bar()
+
+    def notes_zoom(self, delta):
+        if not self.dual:
+            return
+        self.notes_px = max(12, min(64, self.notes_px + delta))
+        self._apply_notes_size()
+        prefs = _load_presenter_prefs()
+        prefs["notesPx"] = self.notes_px
+        _save_presenter_prefs(prefs)
+
+    def _apply_notes_size(self):
+        f = QFont("Noto Sans")
+        f.setPixelSize(self.notes_px)
+        self.notes.setFont(f)
+        self.notes.document().setDefaultFont(f)
+
+    def _default_state(self):
+        if self.online:
+            return f"SHARE THE WINDOW  “{AUDIENCE_TITLE}”"
+        return f"AUDIENCE → {self.audience_screen.name()}"
+
+    def refresh_audience_state(self):
+        if not self.dual or self._closing:
+            return
+        viewable = x11props.is_viewable(self.audience)
+        warn = viewable is False or not self.audience.isVisible()
+        if warn:
+            text = "⚠  AUDIENCE WINDOW HIDDEN · a shared window is frozen · show it again"
+        elif self.paused:
+            text = "PAUSED · AUDIENCE DIMMED"
+        elif self.curtain:
+            text = "CURTAIN · AUDIENCE SCREEN HIDDEN"
+        elif self.blank == "B":
+            text = "AUDIENCE: BLACK"
+        elif self.blank == "W":
+            text = "AUDIENCE: WHITE"
+        else:
+            text = self._default_state()
+        if self.audience_state.text() != text:
+            self.audience_state.setText(text)
+        if bool(self.audience_state.property("warn")) != warn:
+            self.audience_state.setProperty("warn", warn)
+            self.audience_state.style().unpolish(self.audience_state)
+            self.audience_state.style().polish(self.audience_state)
 
     def _install_shortcuts(self, host):
         # Keep exactly one shortcut set per presentation session. ApplicationShortcut
@@ -1353,12 +1822,16 @@ class Presenter(QMainWindow):
         for sequence, callback in bindings:
             sc = QShortcut(QKeySequence(sequence), host)
             sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
-            sc.activated.connect(callback)
+            sc.activated.connect(lambda cb=callback: None if self._share_checking else cb())
             self._shortcuts.append(sc)
         for n in range(1, 10):
             sc = QShortcut(QKeySequence(str(n)), host)
             sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
-            sc.activated.connect(lambda n=n: None if self.paused else self.navigate(10000 + n - 1))
+            sc.activated.connect(
+                lambda n=n: None
+                if (self.paused or self._share_checking)
+                else self.navigate(10000 + n - 1)
+            )
             self._shortcuts.append(sc)
 
     def _screen_removed(self, screen):
@@ -1373,6 +1846,10 @@ class Presenter(QMainWindow):
         self.setFocus(Qt.OtherFocusReason)
         if self.centralWidget():
             self.centralWidget().setFocus(Qt.OtherFocusReason)
+        if self.share_dialog is not None and self.share_dialog.isVisible():
+            # Keep the Share check above the presenter view (also without a WM).
+            self.share_dialog.raise_()
+            self.share_dialog.activateWindow()
 
     def claim_audience_focus(self):
         if not self.audience or not self.audience.isVisible():
@@ -1417,8 +1894,17 @@ class Presenter(QMainWindow):
         return max(0, self.clock.elapsed() - self._paused_total_ms - current_pause)
 
     def update_clock(self):
+        if not self.dual:
+            return
         sec = self._active_elapsed_ms() // 1000
-        label = f"{sec//60:02d}:{sec%60:02d}"
+        if self._share_checking:
+            sec = 0
+        label = (
+            f"{sec//60:02d}:{sec%60:02d}"
+            if sec < 3600
+            else f"{sec//3600}:{sec%3600//60:02d}:{sec%60:02d}"
+        )
+        pace = ""
         target = int(self.data.get("targetMinutes", 0) or 0)
         if target > 0:
             visible = [j for j, x in enumerate(self.data["slides"]) if not x.get("hidden")]
@@ -1427,8 +1913,13 @@ class Presenter(QMainWindow):
             delta = int(sec - expected)
             sign = "+" if delta >= 0 else "−"
             d = abs(delta)
-            label += f"  ·  PACE {sign}{d//60:02d}:{d%60:02d}"
+            pace = f"PACE {sign}{d//60:02d}:{d%60:02d}  ·  TARGET {target} MIN"
         self.timer.setText(label)
+        had = bool(self.body.pace.text())
+        self.body.pace.setText(pace)
+        if had != bool(pace):
+            self.body.relayout()
+        self.body.clock.setText(time.strftime("%H:%M"))
 
     def draw(self):
         total = len(self.data["slides"])
@@ -1437,7 +1928,7 @@ class Presenter(QMainWindow):
         # mode QWidget.pos is a built-in method, so using self.pos as a label
         # caused every keyboard navigation redraw to raise AttributeError.
         if self.dual:
-            self.position_label.setText(f"{self.i+1:02d} / {total:02d}")
+            self.position_label.setText(f"{self.i+1} / {total}")
             self.now.render(
                 s,
                 self.data.get("theme", "B&W"),
@@ -1453,9 +1944,15 @@ class Presenter(QMainWindow):
             )
             notes = s.get("notes", "").strip()
             self.notes.setPlainText(notes)
-            self.notes.setVisible(bool(notes))
-            self.notes_label.setVisible(bool(notes))
+            self.notes.setPlaceholderText("No speaker notes for this slide.")
             ni = self._next_visible(self.i, 1)
+            if ni == self.i:
+                self.body.next_title.setText("End of presentation")
+            else:
+                nxt_s = self.data["slides"][ni]
+                self.body.next_title.setText(
+                    f"{ni+1}  ·  {nxt_s.get('title') or nxt_s.get('layout', '')}"
+                )
             self.next.render(
                 self.data["slides"][ni],
                 self.data.get("theme", "B&W"),
@@ -1491,36 +1988,12 @@ class Presenter(QMainWindow):
     def set_blank(self, mode):
         self.blank = mode
         self.audience.set_blank(mode)
-        if self.dual:
-            self.audience_state.setText(
-                (
-                    "AUDIENCE: BLACK"
-                    if mode == "B"
-                    else (
-                        "AUDIENCE: WHITE"
-                        if mode == "W"
-                        else (
-                            "SHARE: NIRUPRES — AUDIENCE"
-                            if self.online
-                            else f"AUDIENCE → {self.audience_screen.name()}"
-                        )
-                    )
-                )
-            )
+        self.refresh_audience_state()
 
     def toggle_curtain(self):
         self.curtain = not self.curtain
         self.audience.set_curtain(self.curtain)
-        if self.dual:
-            self.audience_state.setText(
-                "CURTAIN — AUDIENCE SCREEN HIDDEN"
-                if self.curtain
-                else (
-                    "SHARE: NIRUPRES — AUDIENCE"
-                    if self.online
-                    else f"AUDIENCE → {self.audience_screen.name()}"
-                )
-            )
+        self.refresh_audience_state()
 
     def toggle_pause(self):
         if self._closing:
@@ -1534,8 +2007,7 @@ class Presenter(QMainWindow):
             self.paused = True
             self._pause_started_ms = self.clock.elapsed()
             self.audience.set_pause(True)
-            if self.dual:
-                self.audience_state.setText("PAUSED — AUDIENCE DIMMED")
+            self.refresh_audience_state()
         else:
             now = self.clock.elapsed()
             if self._pause_started_ms is not None:
@@ -1543,15 +2015,12 @@ class Presenter(QMainWindow):
             self._pause_started_ms = None
             self.paused = False
             self.audience.set_pause(False)
-            if self.dual:
-                self.audience_state.setText(
-                    "SHARE: NIRUPRES — AUDIENCE"
-                    if self.online
-                    else f"AUDIENCE → {self.audience_screen.name()}"
-                )
+            self.refresh_audience_state()
         self.update_clock() if self.dual else None
 
     def handle_key(self, key, mods=0, text=""):
+        if self._share_checking:
+            return
         if key == Qt.Key_Escape:
             self.close_session()
             return
@@ -1606,7 +2075,34 @@ class Presenter(QMainWindow):
         elif key == Qt.Key_End:
             self.navigate(999)
 
+    def changeEvent(self, e):
+        super().changeEvent(e)
+        # Back on the presenter workspace: keyboard focus goes straight to the
+        # presenter view so the arrow keys work at once.
+        if (
+            e.type() == QEvent.Type.ActivationChange
+            and self.isActiveWindow()
+            and self.dual
+            and not self._closing
+            and self.centralWidget() is not None
+        ):
+            self.centralWidget().setFocus(Qt.ActiveWindowFocusReason)
+            if self.share_dialog is not None and self.share_dialog.isVisible():
+                self.share_dialog.raise_()
+                self.share_dialog.activateWindow()
+
     def eventFilter(self, watched, event):
+        # Online mode: if the window manager hands focus to the covered audience
+        # window (e.g. after a workspace switch), give it back to the presenter
+        # view and keep the presenter view on top.
+        if (
+            watched is self.audience
+            and event.type() == QEvent.Type.WindowActivate
+            and self.online
+            and self.dual
+            and not self._closing
+        ):
+            QTimer.singleShot(0, self.claim_focus)
         # Capture presentation keys even when a child widget/button owns focus.
         if event.type() == QEvent.Type.KeyPress:
             belongs = watched is self or watched is self.audience
@@ -1672,6 +2168,13 @@ class Presenter(QMainWindow):
         if self._closing:
             return
         self._closing = True
+        if self.share_dialog is not None:
+            try:
+                self.share_dialog.blockSignals(True)
+                self.share_dialog.close()
+            except RuntimeError:
+                pass
+            self.share_dialog = None
         self._black_hold = False
         if self.paused:
             self.paused = False
@@ -1691,5 +2194,6 @@ class Presenter(QMainWindow):
             QApplication.instance().removeEventFilter(self)
         except Exception:
             pass
+        self.presenting_mode.stop()
         self.finished.emit()
         e.accept()

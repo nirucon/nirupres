@@ -23,7 +23,7 @@ APP_INSTANCE = QApplication.instance() or QApplication([])
 import nirupres
 from nirupres import main as m
 
-EXPECTED_VERSION = "2.2.1"
+EXPECTED_VERSION = "2.3.0"
 
 
 def check(cond, msg):
@@ -238,7 +238,7 @@ def main():
         "TABLE",
     }
     check(
-        required_layouts.issubset(set(m.LAYOUTS)) and len(m.LAYOUTS) == 25,
+        required_layouts.issubset(set(m.LAYOUTS)) and len(m.LAYOUTS) == 28,
         "1.2 layout catalogue incomplete",
     )
     samples = {
@@ -651,7 +651,7 @@ def main():
         14,
         [r1, r2],
     )
-    check(14 <= pf.pointSize() <= 34, "paired typography fit returned invalid size")
+    check(14 <= pf.pixelSize() <= 34, "paired typography fit returned invalid size")
 
     # 1.4.0 composition/background contract
     check(hasattr(w, "list_style"), "list-style control missing")
@@ -1180,6 +1180,13 @@ def main():
     check(
         not qt_callback_errors,
         f"Qt callback error in 2.2 checks: {qt_callback_errors[0][1] if qt_callback_errors else ''}",
+    )
+    import gate_23
+
+    gate_23.run(m, app, check)
+    check(
+        not qt_callback_errors,
+        f"Qt callback error in 2.3 checks: {qt_callback_errors[0][1] if qt_callback_errors else ''}",
     )
     sys.excepthook = original_excepthook
 

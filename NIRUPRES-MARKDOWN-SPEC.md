@@ -52,6 +52,24 @@ NIRUPRES 1.2 ships 23 curated layouts while keeping Markdown Spec v1. `layout:` 
 Structured body conventions are intentionally simple for AI interoperability: `value | label` for KPI/number layouts, `step | description` for PROCESS/TIMELINE/MATRIX, `|||` on its own line separates TWO COLUMN columns; content on each side is literal text and blank lines are preserved as spacing. COMPARE remains blank-line separated, and TABLE uses pipe-separated cells. Unknown layouts still normalize safely to TEXT on import.
 
 
+## Layouts added in 2.3
+
+`layout:` also accepts CODE, IMAGE + CAPTION and THREE COLUMN.
+
+- **CODE:** the body is code, rendered in a monospace font that shrinks to
+  fit, without `**bold**` parsing. Put it in a fenced block (three backticks)
+  so indentation and blank lines survive. A line that is only `---` still ends
+  the slide.
+- **IMAGE + CAPTION:** `image:` plus a title and a caption body under the image.
+- **THREE COLUMN:** separate the three columns with lines that are only `|||`.
+- **TABLE:** one row per line, cells separated by `|`, up to 6 columns. The
+  first row is the header and the first column is bold. Markdown tables with
+  leading and trailing pipes and a `---|---` line are accepted.
+
+Text that does not fit is shrunk, then cut with an ellipsis; lists that are
+too long end with "+N more". Deck health reports both.
+
+
 ## Footer styling
 `footer-align` accepts `LEFT`, `CENTER`, or `RIGHT`. `footer-size` accepts `SMALL`, `MEDIUM`, or `LARGE`. Older decks without these fields render as `LEFT` + `MEDIUM`. All sizes remain deliberately subtle and the renderer keeps footer text inside the slide safe area.
 

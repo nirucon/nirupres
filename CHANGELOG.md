@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.3.0: Safe online presenting, presenter view, text that fits
+
+- **Safe sharing in Teams, Meet and Zoom.** The audience window is called
+  `AUDIENCE · share this · NIRUPRES` (WM_CLASS `nirupres-audience`), the
+  presenter view `PRIVATE presenter · do not share` (`nirupres-presenter`) with
+  a red PRIVATE bar that shows even in a share-picker thumbnail. The editor
+  keeps WM_CLASS `nirupres`.
+- **Laptop presenter mode.** F5 on one screen offers the laptop presenter
+  (presenter view fills the screen and covers a 16:9 audience window) or slides
+  only, with an optional remembered choice. Docked, the audience is fullscreen
+  on the chosen screen and the presenter view on the other. The editor is
+  hidden while presenting and comes back afterwards.
+- **Share check** before an online presentation: tells you to pick the
+  **Window** tab and `AUDIENCE · share this · NIRUPRES`, flashes a green border
+  and badge on the audience window for 5 seconds and warns when the audience
+  window is hidden. The timer starts when you press Start presenting.
+- **Workspace hopping.** The audience window sets `_NIRUWM_KEEP_MAPPED`, so
+  NIRUWM keeps it live on a hidden workspace; the presenter view warns if it is
+  hidden anyway, and coming back gives the presenter view the keyboard at once.
+- **Presenting mode:** `niructl present on --pid` (Do Not Disturb, private bar
+  modules hidden) while presenting; with an older NIRUWM `niructl dnd on` and
+  the previous state restored, also after a crash on the next start.
+- **Presenter view** in the app theme, laid out for 1366x768 up to large docked
+  screens: current slide, next slide (a title line on small screens), big timer
+  with pace, clock, slide x / y and a notes pane of at least a third of the
+  height with A− / A+ (`Ctrl+-` / `Ctrl++`, remembered).
+- **Templates fit their boxes.** Pixel-sized fonts (the same on every DPI and
+  export), a real fit that honours line limits and box height, then an
+  ellipsis inside the box; text never draws outside it. Fixed SPLIT, TITLE
+  with image, IMAGE, FULL BLEED, VIDEO, NUMBER GRID, AGENDA, HERO IMAGE,
+  IMAGE + QUOTE, PHOTO, KPI, TWO COLUMN and BIG NUMBER (shrinks to width).
+  Lists that are too long end with "+N more".
+- **Deck health** renders every slide and reports real overflow ("Text does not
+  fit (title)", "3 bullets hidden"); the slide list shows a FIT badge.
+- **New layouts:** CODE (monospace, shrinks to fit, Markdown code fence),
+  IMAGE + CAPTION, THREE COLUMN, and TABLE is now a comparison table with
+  wrapping cells, content-based column widths and up to 6 columns.
+- Tests: a template stress render (every layout, four text lengths, three
+  sizes and DPIs) that fails on any overflow, plus presenter, share check and
+  presenting-mode checks in the release gate.
+
 ## 2.2.1 — Installer and uninstaller
 
 - **Uninstaller.** New `uninstall.sh` (and `nirux extras uninstall nirupres`):

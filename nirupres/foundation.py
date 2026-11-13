@@ -42,6 +42,7 @@ from PySide6.QtGui import (
     QTextDocument,
     QAbstractTextDocumentLayout,
     QPainterPath,
+    QPicture,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -75,8 +76,10 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
 )
 
+from . import textfit
+
 APP = "NIRUPRES"
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 FORMAT = 9
 MD_FORMAT = 2
 TAGLINE = "A minimal, suckless presentation app by Nicklas Rudolfsson."
@@ -273,6 +276,9 @@ LAYOUTS = [
     "VIDEO + TEXT",
     "FULL BLEED",
     "END",
+    "CODE",
+    "IMAGE + CAPTION",
+    "THREE COLUMN",
 ]
 UDDEVALLA_ACCENTS = {
     "BLUE": "#0065A6",
@@ -820,24 +826,21 @@ def _optimize_asset(src, out_dir, quality_mode="OPTIMIZED"):
 
 
 def _paired_font(texts, family, weight, max_px, min_px, rects):
-    """Fit equivalent regions as one typographic system, not independently."""
-    size = max_px
-    while size > min_px:
-        f = QFont(family, size)
-        f.setWeight(weight)
-        fm = QFontMetrics(f)
-        ok = True
-        for text, rect in zip(texts, rects):
-            br = fm.boundingRect(rect.toRect(), int(Qt.TextWordWrap), text or "")
-            if br.height() > rect.height() or br.width() > rect.width():
-                ok = False
-                break
-        if ok:
-            return f
-        size -= 2
-    f = QFont(family, min_px)
-    f.setWeight(weight)
-    return f
+    """Fit equivalent regions as one typographic system, not independently.
+
+    2.3: pixel sizes (QFont.pixelSize), measured with the same layout the
+    renderer paints, so the result does not depend on the screen DPI.
+    """
+    sizes = [
+        textfit.fit_size(text, family, weight, max_px, min_px, rect)
+        for text, rect in zip(texts, rects)
+        if str(text or "").strip()
+    ]
+    if any(z is None for z in sizes):
+        size = min_px
+    else:
+        size = min(sizes) if sizes else max_px
+    return textfit.px_font(family, size, weight)
 
 
 def _parse_two_column_body(body):
@@ -974,18 +977,9 @@ def draw_text(p, rect, text, font, color, flags=Qt.AlignLeft | Qt.AlignVCenter |
 
 
 def fit_font(text, family, weight, max_px, min_px, rect, max_lines=3):
-    size = max_px
-    while size > min_px:
-        f = QFont(family, size)
-        f.setWeight(weight)
-        fm = QFontMetrics(f)
-        br = fm.boundingRect(rect.toRect(), int(Qt.TextWordWrap), _plain_markup(text))
-        if br.height() <= rect.height() and br.width() <= rect.width():
-            return f
-        size -= 2
-    f = QFont(family, min_px)
-    f.setWeight(weight)
-    return f
+    """Largest pixel-sized font in [min_px, max_px] that fits ``max_lines`` in ``rect``."""
+    size = textfit.fit_size(text, family, weight, max_px, min_px, rect, max_lines)
+    return textfit.px_font(family, size or min_px, weight)
 
 
 def draw_image(
@@ -1112,6 +1106,57 @@ def timeline_cells(safe_rect, count, yline):
     return out
 
 
+def _clean_items(body, strip_markers=True):
+    out = []
+    for q in str(body or "").splitlines():
+        q = q.strip()
+        if not q:
+            continue
+        if strip_markers:
+            q = re.sub(r"^(?:[-•–—]\s+|\*\s+)", "", q)
+        out.append(q)
+    return out
+
+
+def _take(items, cap, label):
+    """Show at most ``cap`` items; when more exist the last slot says "+N more"."""
+    if len(items) <= cap:
+        return items, 0
+    shown = items[: max(0, cap - 1)]
+    hidden = len(items) - len(shown)
+    textfit.note("hidden", label=label, count=hidden)
+    return shown, hidden
+
+
+def _parse_columns(body, count):
+    """Split a body into ``count`` literal columns on lines that are only `|||`."""
+    raw = str(body or "").replace("\r\n", "\n").replace("\r", "\n")
+    parts = re.split(r"^\s*\|\|\|?\s*$", raw, flags=re.M)
+    parts = [x.strip() for x in parts]
+    if len(parts) == 1 and count > 1:
+        parts = [x.strip() for x in re.split(r"\n\s*\n", raw.strip())]
+    if len(parts) > count:
+        parts = parts[: count - 1] + ["\n\n".join(parts[count - 1 :])]
+    return parts + [""] * (count - len(parts))
+
+
+def _table_rows(body):
+    rows = []
+    for q in str(body or "").splitlines():
+        q = q.strip()
+        if not q or re.fullmatch(r"[\s|:\-+]+", q):
+            continue
+        if q.startswith("|"):
+            q = q[1:]
+        if q.endswith("|") and not q.endswith("\\|"):
+            q = q[:-1]
+        rows.append([c.strip() for c in q.split("|")])
+    return rows
+
+
+PT_TO_PX = 96.0 / 72.0
+
+
 def render_slide(
     p,
     rect,
@@ -1125,7 +1170,14 @@ def render_slide(
     footer_text="",
     footer_align="LEFT",
     footer_size="MEDIUM",
+    report=None,
 ):
+    if report is not None:
+        with textfit.collect(report, textfit._TRACE):
+            return render_slide(
+                p, rect, s, theme_name, index, total, show_numbers, deck_font, show_logo,
+                footer_text, footer_align, footer_size,
+            )
     theme_name = (
         s.get("themeOverride", "DECK") if s.get("themeOverride", "DECK") != "DECK" else theme_name
     )
@@ -1136,12 +1188,11 @@ def render_slide(
     p.save()
     p.setRenderHint(QPainter.Antialiasing)
     p.setRenderHint(QPainter.SmoothPixmapTransform)
+    p.setRenderHint(QPainter.TextAntialiasing)
     p.fillRect(rect, QColor(t["bg"]))
     x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
     m = w * 0.055
     top = h * 0.055
-    # Optional slide background image. It always fills the canvas and is rendered
-    # beneath theme decoration/content so branded accent edges remain intact.
     bgimg = str(s.get("backgroundImage", "") or "")
     if bgimg:
         bgfx = float(s.get("backgroundFocalX", 0.5))
@@ -1149,21 +1200,9 @@ def render_slide(
         bgdim = max(0, min(90, int(s.get("backgroundDim", 75))))
         bgblur = max(0, min(20, int(s.get("backgroundBlur", 0))))
         draw_image(
-            p,
-            rect,
-            bgimg,
-            "FILL",
-            bool(s.get("backgroundMono", False)),
-            bgfx,
-            bgfy,
-            1.0,
-            0,
-            0,
-            0,
-            bgblur,
-            float(s.get("_backgroundZoom", 1.0) or 1.0),
+            p, rect, bgimg, "FILL", bool(s.get("backgroundMono", False)), bgfx, bgfy, 1.0,
+            0, 0, 0, bgblur, float(s.get("_backgroundZoom", 1.0) or 1.0),
         )
-        # Theme-coloured veil preserves readability on both light and dark themes.
         veil = QColor(t["bg"])
         veil.setAlpha(int(255 * bgdim / 100))
         p.fillRect(rect, veil)
@@ -1186,76 +1225,83 @@ def render_slide(
     sans = s.get("fontFamily", "DECK")
     sans = deck_font if sans == "DECK" else sans
     mono_font = "Noto Sans Mono"
-    scale = float(s.get("fontScale", 1.0))
+    try:
+        scale = max(0.5, min(2.0, float(s.get("fontScale", 1.0) or 1.0)))
+    except (TypeError, ValueError):
+        scale = 1.0
     align_name = s.get("align", "LEFT")
     base_align = {"LEFT": Qt.AlignLeft, "CENTER": Qt.AlignHCenter, "RIGHT": Qt.AlignRight}.get(
         align_name, Qt.AlignLeft
     )
-    # restrained metadata: no background container
-    if show_numbers and layout not in ("FULL BLEED",):
-        f = QFont(mono_font, max(7, int(h * 0.013)))
-        f.setLetterSpacing(QFont.AbsoluteSpacing, max(1, w * 0.0012))
-        draw_text(
-            p,
-            QRectF(x + m, y + top, w * 0.5, h * 0.04),
-            f"{index+1:02d} / {total:02d}",
-            f,
-            t["muted"],
+    L, T, VC, HC, R, B = Qt.AlignLeft, Qt.AlignTop, Qt.AlignVCenter, Qt.AlignHCenter, Qt.AlignRight, Qt.AlignBottom
+
+    def px(frac, floor=1):
+        # Font sizes are pixels. Templates were designed in points on a 96 dpi
+        # canvas (1 pt = 4/3 px); keep that look on every device and DPI.
+        return max(floor, h * frac * PT_TO_PX)
+
+    def text(r, txt, maxp, minp, color=None, weight=QFont.Normal, align=L | VC, lines=None,
+             label="text", family=None, markup=True, wrap=True, size=None, scaled=True):
+        k = scale if scaled else 1.0
+        return textfit.fit_draw(
+            p, r, txt, family or sans, weight, px(maxp * k), px(minp * k, 1),
+            QColor(color or t["fg"]), align, lines, label, markup, wrap, size,
         )
 
-    def hero(
-        r, txt, maxp=0.082, minp=0.038, align=Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap
-    ):
-        hero_weight = {
-            "LIGHT": QFont.Light,
-            "REGULAR": QFont.Normal,
-            "BOLD": QFont.Bold,
-            "AUTO": QFont.Black,
-        }.get(s.get("weight", "AUTO"), QFont.Black)
-        f = fit_font(txt, sans, hero_weight, int(h * maxp * scale), int(h * minp * scale), r)
-        draw_text(
-            p,
-            r,
-            txt,
-            f,
-            t["fg"],
-            (
-                (base_align | Qt.AlignVCenter | Qt.TextWordWrap)
-                if align == (Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap)
-                else align
-            ),
+    def label_text(r, txt, frac, color, family=None, weight=QFont.Normal, align=L | VC):
+        # Single-line metadata (markers, numbers): shrink a little, then elide.
+        return textfit.fit_draw(
+            p, r, txt, family or mono_font, weight, px(frac, 6), px(frac * 0.6, 5),
+            QColor(color), align, 1, "label", False,
         )
 
-    def bodytxt(
-        r,
-        txt,
-        align=Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap,
-        maxp=0.027,
-        minp=0.016,
-        color=None,
-    ):
-        # Content-aware body typography: short copy stays generous, dense copy
-        # scales down rather than overflowing. This is shared by every layout.
-        lines = max(1, len([q for q in str(txt or "").splitlines() if q.strip()]))
-        density = max(1.0, len(str(txt or "")) / 150.0, lines / 6.0)
-        top = maxp if density <= 1.0 else max(minp, maxp / density**0.35)
-        f = fit_font(
-            txt,
-            sans,
-            QFont.Normal,
-            int(h * top * scale),
-            max(9, int(h * minp * scale)),
-            r,
-            max(2, lines + 2),
-        )
-        draw_text(p, r, txt, f, color or t["muted"], align)
+    hero_weight = {
+        "LIGHT": QFont.Light,
+        "REGULAR": QFont.Normal,
+        "BOLD": QFont.Bold,
+        "AUTO": QFont.Black,
+    }.get(s.get("weight", "AUTO"), QFont.Black)
+
+    def hero(r, txt, maxp=0.082, minp=0.038, align=None, lines=3):
+        a = align if align is not None else (base_align | VC)
+        return text(r, txt, maxp, minp, t["fg"], hero_weight, a, lines, "title")
+
+    def bodytxt(r, txt, align=None, maxp=0.027, minp=0.016, color=None, lines=None, label="body"):
+        a = align if align is not None else (L | VC)
+        if align is None and base_align != Qt.AlignLeft:
+            a = base_align | VC
+        return text(r, txt, maxp, minp, color or t["muted"], QFont.Normal, a, lines, label)
+
+    def more(r, hidden, align=L | VC):
+        if hidden:
+            text(r, textfit.more_label(hidden), 0.020, 0.012, t["muted"], QFont.Medium, align, 1,
+                 "more", markup=False, scaled=False)
+
+    def paired(texts, rects, maxp, minp, weight=QFont.Normal, lines=None):
+        sizes = [
+            textfit.fit_size(tx, sans, weight, px(maxp * scale), px(minp * scale), r, lines)
+            for tx, r in zip(texts, rects)
+            if str(tx or "").strip()
+        ]
+        if not sizes:
+            return int(px(maxp * scale))
+        if any(z is None for z in sizes):
+            return int(px(minp * scale))
+        return min(sizes)
 
     def accent_for(n=0):
         colors = t.get("profile") or [t["accent"]]
         return colors[n % len(colors)]
 
+    def image(r, path, img_mode=None, opacity=1.0):
+        return draw_image(p, r, path, img_mode or mode, mono, fx, fy, opacity, br, ct, ov, bl)
+
+    if show_numbers and layout not in ("FULL BLEED",):
+        label_text(QRectF(x + m, y + top, w * 0.3, h * 0.035), f"{index+1:02d} / {total:02d}",
+                   0.013, t["muted"])
+
     if layout in ("VIDEO", "VIDEO + TEXT"):
-        hero(QRectF(x + m, y + h * 0.08, w * 0.82, h * 0.10), title, 0.045, 0.026)
+        hero(QRectF(x + m, y + h * 0.08, w * 0.82, h * 0.12), title, 0.045, 0.024, lines=2)
         vr = (
             QRectF(x + m, y + h * 0.23, w - 2 * m, h * 0.58)
             if layout == "VIDEO"
@@ -1269,588 +1315,420 @@ def render_slide(
         p.setPen(QColor(t["fg"]))
         p.setBrush(Qt.NoBrush)
         p.drawRect(vr)
-        tri = QFont(sans, max(18, int(h * 0.055)), QFont.Bold)
-        draw_text(
-            p,
-            QRectF(vr.center().x() - w * 0.04, vr.center().y() - h * 0.05, w * 0.08, h * 0.10),
-            "▶",
-            tri,
-            t["fg"],
-            Qt.AlignCenter,
-        )
+        text(QRectF(vr.center().x() - w * 0.04, vr.center().y() - h * 0.05, w * 0.08, h * 0.10),
+             "▶", 0.055, 0.03, t["fg"], QFont.Bold, HC | VC, 1, "label", markup=False, scaled=False)
         if layout == "VIDEO + TEXT":
-            bodytxt(
-                QRectF(x + w * 0.68, y + h * 0.27, w * 0.25, h * 0.46),
-                body,
-                Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
-                maxp=0.024,
-                minp=0.015,
-                color=t["fg"],
-            )
+            bodytxt(QRectF(x + w * 0.66, y + h * 0.25, w * 0.285, h * 0.52), body, L | T,
+                    0.024, 0.014, t["fg"])
         elif body:
-            bodytxt(
-                QRectF(x + m, y + h * 0.84, w - 2 * m, h * 0.07),
-                body,
-                Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap,
-                maxp=0.018,
-                minp=0.013,
-            )
+            bodytxt(QRectF(x + m, y + h * 0.825, w - 2 * m, h * 0.10), body, L | VC, 0.020,
+                    0.012, lines=3)
     elif layout == "FULL BLEED":
-        draw_image(p, rect, img, "FILL", mono, fx, fy, 1.0, br, ct, ov, bl)
+        image(rect, img, "FILL")
         p.fillRect(rect, QColor(0, 0, 0, 105))
-        hero(QRectF(x + m, y + h * 0.55, w - 2 * m, h * 0.25), title, 0.085, 0.04)
-        f = QFont(sans, int(h * 0.025))
-        draw_text(p, QRectF(x + m, y + h * 0.82, w - 2 * m, h * 0.08), body, f, "#E8E8E8")
-    elif layout == "AGENDA":
-        hero(QRectF(x + m, y + h * 0.11, w * 0.72, h * 0.13), title, 0.052, 0.030)
-        items = [
-            re.sub(r"^(?:[-•–—]\s+|\*\s+)", "", q.strip()) for q in body.splitlines() if q.strip()
-        ][:6]
-        yy = y + h * 0.31
-        step = h * 0.092
+        hero(QRectF(x + m, y + h * 0.45, w - 2 * m, h * 0.34), title, 0.085, 0.036,
+             base_align | B, 3)
+        if body:
+            text(QRectF(x + m, y + h * 0.81, w - 2 * m, h * 0.11), body, 0.025, 0.014,
+                 "#E8E8E8", QFont.Normal, base_align | T, 3, "body")
+    elif layout in ("AGENDA", "BULLETS"):
+        agenda = layout == "AGENDA"
+        if agenda:
+            hero(QRectF(x + m, y + h * 0.10, w * 0.80, h * 0.15), title, 0.052, 0.028, lines=2)
+            top_y, area_h, cap = y + h * 0.30, h * 0.58, 6
+        else:
+            hero(QRectF(x + m, y + h * 0.11, w * 0.82, h * 0.17), title, 0.058, 0.028, lines=2)
+            p.fillRect(QRectF(x + m, y + h * 0.30, w * 0.055, max(2, h * 0.0035)),
+                       QColor(t["accent"]))
+            top_y, area_h, cap = y + h * 0.345, h * 0.545, 7
+        items, hidden = _take(_clean_items(body), cap, "items" if agenda else "bullets")
+        slots = len(items) + (1 if hidden else 0)
+        step = min(h * (0.092 if agenda else 0.079), area_h / max(1, slots))
+        style = str(s.get("listStyle", "NUMBERS")).upper()
+        marker_w = w * (0.07 if agenda else 0.045)
+        has_marker = style != "NONE"
+        tx = x + m + ((w * 0.13 if agenda else w * 0.055) if has_marker else 0)
+        tw = (x + w - m) - tx - w * (0.08 if agenda else 0.06)
+        boxes = [QRectF(tx, top_y + n * step, tw, step * 0.86) for n in range(len(items))]
+        size = paired(items, boxes, 0.032, 0.017, QFont.Medium if agenda else QFont.Normal, 3)
         for n, item in enumerate(items):
-            style = str(s.get("listStyle", "NUMBERS")).upper()
+            yy = top_y + n * step
             marker = {"NUMBERS": f"{n+1:02d}", "DOTS": "•", "DASHES": "—", "NONE": ""}.get(
                 style, f"{n+1:02d}"
             )
             if marker:
-                draw_text(
-                    p,
-                    QRectF(x + m, yy, w * 0.07, step * 0.72),
-                    marker,
-                    QFont(mono_font, max(11, int(h * 0.025))),
-                    accent_for(n),
-                    Qt.AlignLeft | Qt.AlignVCenter,
-                )
-            tx = x + m + (w * 0.13 if marker else 0)
-            tw = w * (0.68 if marker else 0.81)
-            if marker:
-                p.fillRect(
-                    QRectF(x + m + w * 0.075, yy + step * 0.35, w * 0.035, max(1, h * 0.002)),
-                    QColor(t["rule"]),
-                )
-            f = fit_font(
-                item,
-                sans,
-                QFont.Medium,
-                int(h * 0.032),
-                int(h * 0.020),
-                QRectF(tx, yy, tw, step * 0.72),
-                2,
-            )
-            draw_text(p, QRectF(tx, yy, tw, step * 0.72), item, f, t["fg"])
-            yy += step
+                label_text(QRectF(x + m, yy, marker_w, step * 0.86), marker,
+                           0.025 if agenda else 0.016, accent_for(n))
+                if agenda:
+                    p.fillRect(
+                        QRectF(x + m + w * 0.075, yy + step * 0.43, w * 0.035, max(1, h * 0.002)),
+                        QColor(t["rule"]),
+                    )
+            text(boxes[n], item, 0.032, 0.017, t["fg"], QFont.Medium if agenda else QFont.Normal,
+                 L | VC, 3, "item", size=size)
+        if hidden:
+            more(QRectF(tx, top_y + len(items) * step, tw, step * 0.86), hidden)
     elif layout == "HERO IMAGE":
         ir = QRectF(x + w * 0.40, y, w * 0.60, h)
-        drawn = draw_image(p, ir, img, "FILL", mono, fx, fy, 1.0, br, ct, ov, bl)
-        if drawn:
+        if image(ir, img, "FILL"):
             p.fillRect(QRectF(x + w * 0.40, y, w * 0.10, h), QColor(t["bg"]))
-        hero(QRectF(x + m, y + h * 0.22, w * 0.39, h * 0.30), title, 0.075, 0.034)
+        hero(QRectF(x + m, y + h * 0.16, w * 0.39, h * 0.38), title, 0.075, 0.032,
+             base_align | B, 4)
         p.fillRect(QRectF(x + m, y + h * 0.57, w * 0.08, max(2, h * 0.005)), QColor(t["accent"]))
-        bodytxt(QRectF(x + m, y + h * 0.61, w * 0.31, h * 0.18), body, maxp=0.024)
-    elif layout == "COMPARE":
-        # COMPARE uses the same literal two-pane contract as TWO COLUMN.
-        # No first-line heading inference: what the user writes is what renders.
-        hero(QRectF(x + m, y + h * 0.10, w * 0.82, h * 0.12), title, 0.050, 0.028)
-        if (
+        bodytxt(QRectF(x + m, y + h * 0.61, w * 0.31, h * 0.27), body, L | T, 0.024, 0.014)
+    elif layout in ("COMPARE", "TWO COLUMN", "THREE COLUMN"):
+        three = layout == "THREE COLUMN"
+        hero(QRectF(x + m, y + h * 0.10, w * 0.82, h * 0.15), title, 0.052, 0.028, lines=2)
+        if three:
+            texts = _parse_columns(body, 3)
+        elif (
             bool(s.get("sideStructured") or s.get("twoColumnStructured"))
             and s.get("leftColumn") is not None
             and s.get("rightColumn") is not None
         ):
-            left_text = str(s.get("leftColumn") or "").strip()
-            right_text = str(s.get("rightColumn") or "").strip()
+            texts = [str(s.get("leftColumn") or "").strip(), str(s.get("rightColumn") or "").strip()]
         else:
             cols, _ = _parse_two_column_body(body)
-            left_text = cols[0]["text"]
-            right_text = cols[1]["text"]
-        gutter = w * 0.060
-        rw = (w - 2 * m - gutter) / 2
-        top = y + h * 0.31
-        content_h = h * 0.45
-        rects = [QRectF(x + m, top, rw, content_h), QRectF(x + m + rw + gutter, top, rw, content_h)]
-        bf = _paired_font(
-            [left_text, right_text], sans, QFont.Normal, int(h * 0.027), int(h * 0.016), rects
-        )
-        draw_text(p, rects[0], left_text, bf, t["fg"], Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap)
-        draw_text(
-            p, rects[1], right_text, bf, t["fg"], Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap
-        )
-        p.fillRect(
-            QRectF(rects[0].x(), top - h * 0.018, rects[0].width(), max(2, h * 0.004)),
-            QColor(t["accent"]),
-        )
-        p.fillRect(
-            QRectF(rects[1].x(), top - h * 0.018, rects[1].width(), max(2, h * 0.004)),
-            QColor(t["accent"]),
-        )
+            texts = [cols[0]["text"], cols[1]["text"]]
+        n = len(texts)
+        gutter = w * (0.045 if three else (0.060 if layout == "COMPARE" else 0.070))
+        cw = (w - 2 * m - gutter * (n - 1)) / n
+        ctop = y + h * (0.33 if layout != "TWO COLUMN" else 0.345)
+        ch = h * 0.55
+        rects = [QRectF(x + m + i * (cw + gutter), ctop, cw, ch) for i in range(n)]
+        size = paired(texts, rects, 0.027, 0.0145)
+        for i, (tx_, r) in enumerate(zip(texts, rects)):
+            text(r, tx_, 0.027, 0.0145, t["fg"], QFont.Normal, L | T, None, "column", size=size)
+        if layout == "TWO COLUMN":
+            p.fillRect(QRectF(x + m, y + h * 0.285, w * 0.065, max(2, h * 0.0035)),
+                       QColor(t["accent"]))
+            p.fillRect(QRectF(x + w * 0.5 - w * 0.0006, ctop, max(1, w * 0.0012), ch),
+                       QColor(t["rule"]))
+        else:
+            for i, r in enumerate(rects):
+                p.fillRect(QRectF(r.x(), ctop - h * 0.022, r.width(), max(2, h * 0.004)),
+                           QColor(accent_for(i) if three else t["accent"]))
     elif layout == "DATA / KPI":
-        hero(QRectF(x + m, y + h * 0.09, w * 0.74, h * 0.10), title, 0.043, 0.025)
-        items = [q.strip() for q in body.splitlines() if q.strip()][:4]
+        hero(QRectF(x + m, y + h * 0.08, w * 0.80, h * 0.12), title, 0.043, 0.024, lines=2)
+        items, hidden = _take([q.strip() for q in body.splitlines() if q.strip()], 4, "metrics")
         primary = items[0].split("|", 1) if items else ["—", "Primary metric"]
         num = primary[0].strip()
         lab = primary[1].strip() if len(primary) > 1 else ""
-        f = fit_font(
-            num,
-            sans,
-            QFont.Black,
-            int(h * 0.20),
-            int(h * 0.09),
-            QRectF(x + m, y + h * 0.25, w * 0.48, h * 0.25),
-            1,
-        )
-        draw_text(p, QRectF(x + m, y + h * 0.22, w * 0.48, h * 0.28), num, f, t["accent"])
-        bodytxt(QRectF(x + m, y + h * 0.50, w * 0.42, h * 0.10), lab, maxp=0.025, color=t["fg"])
-        rest = items[1:4]
+        text(QRectF(x + m, y + h * 0.24, w * 0.48, h * 0.25), num, 0.20, 0.035, t["accent"],
+             QFont.Black, L | VC, 1, "number", markup=False, wrap=False)
+        bodytxt(QRectF(x + m, y + h * 0.50, w * 0.45, h * 0.18), lab, L | T, 0.025, 0.014,
+                t["fg"], 4)
+        rest = items[1:]
         for n, item in enumerate(rest):
             a = item.split("|", 1)
             val = a[0].strip()
             label = a[1].strip() if len(a) > 1 else ""
-            ry = y + h * (0.27 + n * 0.17)
-            draw_text(
-                p,
-                QRectF(x + w * 0.61, ry, w * 0.15, h * 0.07),
-                val,
-                QFont(sans, max(12, int(h * 0.036)), QFont.Bold),
-                t["fg"],
-            )
-            draw_text(
-                p,
-                QRectF(x + w * 0.77, ry, w * 0.16, h * 0.07),
-                label,
-                QFont(sans, max(8, int(h * 0.017))),
-                t["muted"],
-            )
-            if n < len(rest) - 1:
+            ry = y + h * (0.25 + n * 0.17)
+            text(QRectF(x + w * 0.60, ry, w * 0.16, h * 0.12), val, 0.036, 0.016, t["fg"],
+                 QFont.Bold, L | VC, 1, "number", markup=False, wrap=False)
+            bodytxt(QRectF(x + w * 0.775, ry, w * 0.17, h * 0.12), label, L | VC, 0.017, 0.0115,
+                    lines=4)
+            if n < len(rest) - 1 or hidden:
                 p.fillRect(
-                    QRectF(x + w * 0.61, ry + h * 0.105, w * 0.31, max(1, h * 0.002)),
+                    QRectF(x + w * 0.60, ry + h * 0.14, w * 0.345, max(1, h * 0.002)),
                     QColor(t["rule"]),
                 )
+        if hidden:
+            more(QRectF(x + w * 0.60, y + h * (0.25 + len(rest) * 0.17), w * 0.345, h * 0.06),
+                 hidden)
     elif layout == "PROCESS":
-        hero(QRectF(x + m, y + h * 0.10, w * 0.80, h * 0.12), title, 0.050, 0.028)
-        items = [q.strip() for q in body.splitlines() if q.strip()][:5]
+        hero(QRectF(x + m, y + h * 0.09, w * 0.80, h * 0.15), title, 0.050, 0.026, lines=2)
+        items, hidden = _take([q.strip() for q in body.splitlines() if q.strip()], 5, "steps")
         n = max(1, len(items))
         gap = w * 0.018
         cell = (w - 2 * m - gap * (n - 1)) / n
-        y0 = y + h * 0.35
-        for j, item in enumerate(items):
+        y0 = y + h * 0.33
+        heads, descs = [], []
+        for item in items:
             a = item.split("|", 1)
-            head = a[0].strip()
-            desc = a[1].strip() if len(a) > 1 else ""
-            rx = x + m + j * (cell + gap)
-            draw_text(
-                p,
-                QRectF(rx, y0, cell, h * 0.06),
-                f"{j+1:02d}",
-                QFont(mono_font, max(9, int(h * 0.018))),
-                accent_for(j),
-                Qt.AlignLeft | Qt.AlignVCenter,
-            )
-            p.fillRect(QRectF(rx, y0 + h * 0.085, cell, max(2, h * 0.004)), QColor(accent_for(j)))
-            f = fit_font(
-                head,
-                sans,
-                QFont.Bold,
-                int(h * 0.030),
-                int(h * 0.019),
-                QRectF(rx, y0 + h * 0.12, cell, h * 0.10),
-                2,
-            )
-            draw_text(
-                p,
-                QRectF(rx, y0 + h * 0.12, cell, h * 0.10),
-                head,
-                f,
-                t["fg"],
-                Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
-            )
-            bodytxt(
-                QRectF(rx, y0 + h * 0.23, cell, h * 0.17),
-                desc,
-                Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
-                maxp=0.019,
-                minp=0.014,
-            )
+            heads.append(a[0].strip())
+            descs.append(a[1].strip() if len(a) > 1 else "")
+        hrects = [QRectF(x + m + j * (cell + gap), y0 + h * 0.11, cell, h * 0.12) for j in range(len(items))]
+        drects = [QRectF(r.x(), y0 + h * 0.24, cell, h * 0.30) for r in hrects]
+        hs = paired(heads, hrects, 0.030, 0.016, QFont.Bold, 3)
+        ds = paired(descs, drects, 0.019, 0.0115)
+        for j in range(len(items)):
+            rx = hrects[j].x()
+            label_text(QRectF(rx, y0, cell, h * 0.06), f"{j+1:02d}", 0.018, accent_for(j))
+            p.fillRect(QRectF(rx, y0 + h * 0.08, cell, max(2, h * 0.004)), QColor(accent_for(j)))
+            text(hrects[j], heads[j], 0.030, 0.016, t["fg"], QFont.Bold, L | T, 3, "step", size=hs)
+            text(drects[j], descs[j], 0.019, 0.0115, t["muted"], QFont.Normal, L | T, None,
+                 "step", size=ds)
+        if hidden:
+            more(QRectF(x + m, y + h * 0.86, w - 2 * m, h * 0.05), hidden, R | VC)
     elif layout == "MATRIX":
-        hero(QRectF(x + m, y + h * 0.08, w * 0.78, h * 0.11), title, 0.046, 0.026)
-        items = [q.strip() for q in body.splitlines() if q.strip()][:4]
+        hero(QRectF(x + m, y + h * 0.07, w * 0.80, h * 0.14), title, 0.046, 0.024, lines=2)
+        items, hidden = _take([q.strip() for q in body.splitlines() if q.strip()], 4, "cells")
         for n, item in enumerate(items):
             a = item.split("|", 1)
             head = a[0].strip()
             desc = a[1].strip() if len(a) > 1 else ""
-            col = n % 2
-            row = n // 2
+            col, row = n % 2, n // 2
             rx = x + m + col * w * 0.445
-            ry = y + h * (0.28 + row * 0.29)
-            rw = w * 0.39
+            ry = y + h * (0.25 + row * 0.33)
+            rw = w * 0.40
             p.fillRect(QRectF(rx, ry, w * 0.035, max(2, h * 0.004)), QColor(accent_for(n)))
-            draw_text(
-                p,
-                QRectF(rx, ry + h * 0.035, rw, h * 0.065),
-                head,
-                QFont(sans, max(10, int(h * 0.025)), QFont.Bold),
-                t["fg"],
-            )
-            bodytxt(
-                QRectF(rx, ry + h * 0.105, rw, h * 0.12),
-                desc,
-                Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
-                maxp=0.020,
-                minp=0.014,
-            )
+            text(QRectF(rx, ry + h * 0.02, rw, h * 0.085), head, 0.025, 0.015, t["fg"],
+                 QFont.Bold, L | VC, 2, "cell")
+            bodytxt(QRectF(rx, ry + h * 0.11, rw, h * 0.19), desc, L | T, 0.020, 0.012)
+        if hidden:
+            more(QRectF(x + m, y + h * 0.89, w - 2 * m, h * 0.04), hidden, R | VC)
     elif layout == "TABLE":
-        hero(QRectF(x + m, y + h * 0.08, w * 0.78, h * 0.11), title, 0.046, 0.026)
-        rows = [[c.strip() for c in q.split("|")] for q in body.splitlines() if q.strip()][:7]
-        cols = max([len(r) for r in rows], default=1)
-        cols = min(cols, 4)
-        topy = y + h * 0.26
-        rh = h * 0.085
-        cw = (w - 2 * m) / cols
-        for ri, row in enumerate(rows):
-            for ci in range(cols):
-                txt = row[ci] if ci < len(row) else ""
-                rr = QRectF(x + m + ci * cw, topy + ri * rh, cw - w * 0.008, rh)
-                f = fit_font(
-                    txt,
-                    sans,
-                    QFont.Bold if ri == 0 else QFont.Normal,
-                    int(h * (0.021 if ri == 0 else 0.019)),
-                    int(h * 0.014),
-                    rr,
-                    2,
-                )
-                draw_text(
-                    p,
-                    rr,
-                    txt,
-                    f,
-                    t["fg"] if ri == 0 else t["muted"],
-                    Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap,
-                )
+        hero(QRectF(x + m, y + h * 0.07, w * 0.80, h * 0.14), title, 0.046, 0.024, lines=2)
+        rows = _table_rows(body)
+        cols = min(6, max([len(r) for r in rows], default=1))
+        rows = [(r + [""] * cols)[:cols] for r in rows]
+        tx0, tw = x + m, w - 2 * m
+        ttop, tbot = y + h * 0.24, y + h * 0.905
+        # Column widths follow the content (clamped), so a label column stays narrow.
+        weights = []
+        for c in range(cols):
+            longest = max([len(_plain_markup(r[c])) for r in rows] + [3])
+            weights.append(min(40, max(6, longest)) ** 0.7)
+        tot = sum(weights) or 1
+        widths = [tw * wv / tot for wv in weights]
+        pad_x, pad_y = w * 0.008, h * 0.010
+
+        def row_heights(size, rr):
+            out = []
+            for ri, row in enumerate(rr):
+                need = 0.0
+                for c in range(cols):
+                    n_lines, step, tall = textfit.measure(
+                        row[c], sans, QFont.Bold if ri == 0 or c == 0 else QFont.Normal, size,
+                        widths[c] - 2 * pad_x,
+                    )
+                    tall = tall if n_lines <= 3 else tall * 3 / n_lines
+                    need = max(need, tall, step)
+                out.append(need + 2 * pad_y + 1)
+            return out
+
+        avail = tbot - ttop
+        max_size, min_size = int(px(0.022 * scale)), int(px(0.0125 * scale, 6))
+        shown_rows, size, heights = rows, min_size, None
+        if rows:
+            for sz in range(max_size, min_size - 1, -1):
+                hh = row_heights(sz, rows)
+                if sum(hh) <= avail and all(
+                    textfit.measure(r[c], sans, QFont.Normal, sz, widths[c] - 2 * pad_x)[0] <= 3
+                    for r in rows for c in range(cols)
+                ):
+                    size, heights = sz, hh
+                    break
+            if heights is None:
+                heights = row_heights(min_size, rows)
+                keep = len(rows)
+                more_h = h * 0.05
+                while keep > 1 and sum(heights[:keep]) > avail - more_h:
+                    keep -= 1
+                if keep < len(rows):
+                    textfit.note("hidden", label="rows", count=len(rows) - keep)
+                shown_rows = rows[:keep]
+                heights = heights[:keep]
+        yy = ttop
+        for ri, row in enumerate(shown_rows):
+            rh = min(heights[ri], tbot - yy)
+            if ri % 2 == 0 and ri > 0:
+                band = QColor(t["rule"])
+                band.setAlpha(70)
+                p.fillRect(QRectF(tx0, yy, tw, rh), band)
+            xx = tx0
+            for c in range(cols):
+                cell = QRectF(xx + pad_x, yy + pad_y, widths[c] - 2 * pad_x, max(1, rh - 2 * pad_y))
+                text(cell, row[c], 0.022, 0.0125, t["fg"] if ri == 0 or c == 0 else t["muted"],
+                     QFont.Bold if ri == 0 or c == 0 else QFont.Normal, L | VC, 3, "cell", size=size)
+                xx += widths[c]
             p.fillRect(
-                QRectF(x + m, topy + (ri + 1) * rh - w * 0.001, w - 2 * m, max(1, h * 0.0015)),
+                QRectF(tx0, yy + rh - max(1, h * 0.0015), tw, max(1, h * 0.0015)),
                 QColor(t["accent"] if ri == 0 else t["rule"]),
             )
+            yy += rh
+        if len(shown_rows) < len(rows):
+            more(QRectF(tx0, yy + h * 0.005, tw, h * 0.04), len(rows) - len(shown_rows), R | VC)
     elif layout == "IMAGE":
-        ir = QRectF(x + m, y + h * 0.15, w - 2 * m, h * 0.68)
-        draw_image(p, ir, img, mode, mono, fx, fy, 1.0, br, ct, ov, bl)
-        bodytxt(QRectF(x + m, y + h * 0.84, w - 2 * m, h * 0.06), body)
-        if s.get("caption"):
-            draw_text(
-                p,
-                QRectF(x + m, y + h * 0.92, w - 2 * m, h * 0.035),
-                s.get("caption"),
-                QFont(sans, max(7, int(h * 0.014))),
-                t["muted"],
-                Qt.AlignRight | Qt.AlignVCenter,
-            )
+        has_title = bool(str(title).strip())
+        if has_title:
+            hero(QRectF(x + m, y + h * 0.065, w * 0.80, h * 0.10), title, 0.040, 0.022, lines=2)
+        ir = QRectF(x + m, y + h * (0.18 if has_title else 0.10), w - 2 * m,
+                    h * (0.62 if has_title else 0.70))
+        image(ir, img)
+        cap = str(s.get("caption") or "")
+        bw = w - 2 * m if not cap else w * 0.58
+        bodytxt(QRectF(x + m, y + h * 0.82, bw, h * 0.095), body, L | VC, 0.024, 0.013, lines=3)
+        if cap:
+            text(QRectF(x + m + w * 0.60, y + h * 0.82, w * 0.29, h * 0.095), cap, 0.016, 0.011,
+                 t["muted"], QFont.Normal, R | VC, 3, "caption")
+    elif layout == "IMAGE + CAPTION":
+        ir = QRectF(x + m, y + h * 0.07, w - 2 * m, h * 0.66)
+        image(ir, img, mode if mode != "FILL" else "FILL")
+        p.fillRect(QRectF(x + m, y + h * 0.765, max(2, w * 0.003), h * 0.13), QColor(t["accent"]))
+        cx = x + m + w * 0.018
+        hero(QRectF(cx, y + h * 0.755, w * 0.80, h * 0.07), title, 0.034, 0.018, L | VC, 1)
+        cap = "\n".join(q for q in (body, str(s.get("caption") or "")) if str(q).strip())
+        bodytxt(QRectF(cx, y + h * 0.83, w * 0.80, h * 0.075), cap, L | T, 0.019, 0.0115, lines=3)
     elif layout == "SPLIT":
-        # Editorial 42/58 composition: image carries slightly more visual weight
-        # while text keeps a strict readable measure.
-        left = QRectF(x + m, y + h * 0.18, w * 0.36, h * 0.64)
+        left = QRectF(x + m, y + h * 0.14, w * 0.36, h * 0.74)
         right = QRectF(x + w * 0.50, y + h * 0.12, w * 0.445, h * 0.76)
-        hero(left, title, 0.068, 0.032)
-        bodytxt(
-            QRectF(left.x(), left.y() + left.height() * 0.57, left.width(), left.height() * 0.39),
-            body,
-            maxp=0.025,
-        )
-        draw_image(p, right, img, mode, mono, fx, fy, 1.0, br, ct, ov, bl)
-        p.fillRect(
-            QRectF(x + w * 0.465, y + h * 0.27, max(1, w * 0.0015), h * 0.46), QColor(t["rule"])
-        )
+        tr = QRectF(left.x(), left.y(), left.width(), left.height() * (0.54 if body else 1.0))
+        hero(tr, title, 0.064, 0.030, (base_align | B) if body else None, 5)
+        if body:
+            bodytxt(QRectF(left.x(), tr.bottom() + h * 0.03, left.width(),
+                           left.bottom() - tr.bottom() - h * 0.03), body, L | T, 0.025, 0.014)
+        image(right, img)
+        p.fillRect(QRectF(x + w * 0.465, y + h * 0.27, max(1, w * 0.0015), h * 0.46),
+                   QColor(t["rule"]))
     elif layout == "PHOTO":
-        # Photography is the subject: larger image, quieter supporting copy.
-        ir = QRectF(x + m, y + h * 0.095, w - 2 * m, h * 0.735)
-        draw_image(p, ir, img, mode, mono, fx, fy, 1.0, br, ct, ov, bl)
-        hero(QRectF(x + m, y + h * 0.845, w * 0.50, h * 0.06), title, 0.032, 0.020)
-        bodytxt(
-            QRectF(x + m + w * 0.54, y + h * 0.84, w * 0.40, h * 0.07),
-            body,
-            Qt.AlignRight | Qt.AlignVCenter | Qt.TextWordWrap,
-            maxp=0.019,
-            minp=0.013,
-        )
+        ir = QRectF(x + m, y + h * 0.085, w - 2 * m, h * 0.715)
+        image(ir, img)
+        hero(QRectF(x + m, y + h * 0.815, w * 0.50, h * 0.075), title, 0.032, 0.018, L | VC, 2)
+        bodytxt(QRectF(x + m + w * 0.53, y + h * 0.815, w * 0.36, h * 0.075), body, R | VC,
+                0.019, 0.0115, lines=3)
         if s.get("caption"):
-            draw_text(
-                p,
-                QRectF(x + m, y + h * 0.915, w - 2 * m, h * 0.025),
-                s.get("caption"),
-                QFont(sans, max(7, int(h * 0.012))),
-                t["muted"],
-                Qt.AlignRight | Qt.AlignVCenter,
-            )
-    elif layout == "BULLETS":
-        hero(QRectF(x + m, y + h * 0.13, w * 0.80, h * 0.14), title, 0.058, 0.030)
-        p.fillRect(QRectF(x + m, y + h * 0.305, w * 0.055, max(2, h * 0.0035)), QColor(t["accent"]))
-        items = [
-            re.sub(r"^(?:[-•–—]\s+|\*\s+)", "", q.strip()) for q in body.splitlines() if q.strip()
-        ][:7]
-        yy = y + h * 0.365
-        step = min(h * 0.079, h * 0.50 / max(1, len(items)))
-        list_style = str(s.get("listStyle", "NUMBERS")).upper()
-        for bullet_i, item in enumerate(items):
-            marker = {"NUMBERS": f"{bullet_i+1:02d}", "DOTS": "•", "DASHES": "—", "NONE": ""}.get(
-                list_style, f"{bullet_i+1:02d}"
-            )
-            marker_w = w * 0.045 if marker else 0
-            if marker:
-                draw_text(
-                    p,
-                    QRectF(x + m, yy, marker_w, step * 0.82),
-                    marker,
-                    QFont(mono_font, max(8, int(h * 0.015))),
-                    accent_for(bullet_i),
-                    Qt.AlignLeft | Qt.AlignVCenter,
-                )
-            tx = x + m + (w * 0.055 if marker else 0)
-            tw = w * (0.72 if marker else 0.78)
-            f = fit_font(
-                item,
-                sans,
-                QFont.Normal,
-                int(h * 0.027),
-                int(h * 0.018),
-                QRectF(tx, yy, tw, step * 0.82),
-            )
-            draw_text(p, QRectF(tx, yy, tw, step * 0.82), item, f, t["fg"])
-            yy += step
-    elif layout == "TWO COLUMN":
-        # Literal paired columns. The editor owns the left/right split; the
-        # renderer never infers headings, groups or column moves from content.
-        # Blank lines are rendered as blank lines, exactly as authored.
-        hero(QRectF(x + m, y + h * 0.115, w * 0.82, h * 0.14), title, 0.055, 0.030)
-        p.fillRect(QRectF(x + m, y + h * 0.285, w * 0.065, max(2, h * 0.0035)), QColor(t["accent"]))
-        if (
-            bool(s.get("sideStructured") or s.get("twoColumnStructured"))
-            and s.get("leftColumn") is not None
-            and s.get("rightColumn") is not None
-        ):
-            left_text = str(s.get("leftColumn") or "").strip()
-            right_text = str(s.get("rightColumn") or "").strip()
-        else:
-            cols, _ = _parse_two_column_body(body)
-            left_text = cols[0]["text"]
-            right_text = cols[1]["text"]
-        gutter = w * 0.070
-        half = (w - 2 * m - gutter) / 2
-        top = y + h * 0.355
-        content_h = h * 0.40
-        rects = [
-            QRectF(x + m, top, half, content_h),
-            QRectF(x + m + half + gutter, top, half, content_h),
-        ]
-        # One font calculation for the pair keeps both sides visually balanced.
-        bf = _paired_font(
-            [left_text, right_text], sans, QFont.Normal, int(h * 0.027), int(h * 0.016), rects
-        )
-        draw_text(p, rects[0], left_text, bf, t["fg"], Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap)
-        draw_text(
-            p, rects[1], right_text, bf, t["fg"], Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap
-        )
-        p.fillRect(
-            QRectF(x + w * 0.5 - w * 0.0006, top, max(1, w * 0.0012), content_h), QColor(t["rule"])
-        )
+            text(QRectF(x + m, y + h * 0.893, w - 2 * m, h * 0.035), s.get("caption"), 0.013,
+                 0.010, t["muted"], QFont.Normal, R | VC, 1, "caption")
     elif layout == "IMAGE + QUOTE":
         ir = QRectF(x + m, y + h * 0.11, w * 0.49, h * 0.75)
-        draw_image(p, ir, img, mode, mono, fx, fy, 1.0, br, ct, ov, bl)
-        p.fillRect(
-            QRectF(x + w * 0.555, y + h * 0.25, max(1, w * 0.0014), h * 0.43), QColor(t["rule"])
-        )
-        hero(QRectF(x + w * 0.59, y + h * 0.22, w * 0.34, h * 0.32), title, 0.056, 0.029)
-        bodytxt(QRectF(x + w * 0.59, y + h * 0.60, w * 0.32, h * 0.14), body, maxp=0.022)
+        image(ir, img)
+        p.fillRect(QRectF(x + w * 0.555, y + h * 0.25, max(1, w * 0.0014), h * 0.43),
+                   QColor(t["rule"]))
+        hero(QRectF(x + w * 0.59, y + h * 0.13, w * 0.35, h * 0.44), title, 0.056, 0.026,
+             base_align | B, 6)
+        bodytxt(QRectF(x + w * 0.59, y + h * 0.60, w * 0.35, h * 0.26), body, L | T, 0.022, 0.013)
     elif layout == "NUMBER GRID":
-        hero(QRectF(x + m, y + h * 0.10, w * 0.82, h * 0.12), title, 0.05, 0.028)
-        items = [q.strip() for q in body.splitlines() if q.strip()][:4]
+        hero(QRectF(x + m, y + h * 0.08, w * 0.82, h * 0.14), title, 0.05, 0.026, lines=2)
+        items, hidden = _take([q.strip() for q in body.splitlines() if q.strip()], 4, "numbers")
         for n, item in enumerate(items):
             parts = item.split("|", 1)
             num = parts[0].strip()
             label = parts[1].strip() if len(parts) > 1 else ""
-            col = n % 2
-            row = n // 2
-            rx = x + m + col * w * 0.44
-            ry = y + h * (0.30 + row * 0.29)
-            f = fit_font(
-                num,
-                sans,
-                QFont.Black,
-                int(h * 0.105),
-                int(h * 0.055),
-                QRectF(rx, ry, w * 0.36, h * 0.14),
-                1,
-            )
-            draw_text(p, QRectF(rx, ry, w * 0.36, h * 0.14), num, f, accent_for(n))
-            draw_text(
-                p,
-                QRectF(rx, ry + h * 0.13, w * 0.36, h * 0.07),
-                label,
-                QFont(sans, max(10, int(h * 0.022))),
-                t["muted"],
-            )
+            col, row = n % 2, n // 2
+            rx = x + m + col * w * 0.445
+            ry = y + h * (0.26 + row * 0.31)
+            text(QRectF(rx, ry, w * 0.40, h * 0.14), num, 0.105, 0.03, accent_for(n), QFont.Black,
+                 L | VC, 1, "number", markup=False, wrap=False)
+            bodytxt(QRectF(rx, ry + h * 0.145, w * 0.40, h * 0.13), label, L | T, 0.022, 0.0125,
+                    lines=3)
+        if hidden:
+            more(QRectF(x + m, y + h * 0.88, w - 2 * m, h * 0.04), hidden, R | VC)
     elif layout == "TIMELINE":
-        # Each milestone owns a bounded cell inside the slide safe area.  The
-        # previous renderer centred a fixed-width text box on the first/last
-        # nodes, which could push text beyond the slide edge.  Cell geometry
-        # keeps existing decks intact while making 1–5 milestones reflow safely.
-        hero(QRectF(x + m, y + h * 0.12, w * 0.82, h * 0.13), title, 0.052, 0.028)
-        items = [q.strip() for q in body.splitlines() if q.strip()][:5]
+        hero(QRectF(x + m, y + h * 0.10, w * 0.82, h * 0.15), title, 0.052, 0.026, lines=2)
+        items, hidden = _take([q.strip() for q in body.splitlines() if q.strip()], 5, "milestones")
         n = max(1, len(items))
-        yline = y + h * 0.54
+        yline = y + h * 0.50
         cells = timeline_cells(QRectF(x + m, y, w - 2 * m, h), n, yline)
-        if cells:
-            first_x = cells[0][0]
-            last_x = cells[-1][0]
+        if cells and items:
             p.fillRect(
-                QRectF(first_x, yline, max(1, last_x - first_x), max(2, h * 0.004)),
+                QRectF(cells[0][0], yline, max(1, cells[-1][0] - cells[0][0]), max(2, h * 0.004)),
                 QColor(t["rule"]),
             )
-        for j, item in enumerate(items):
-            xx, head_rect, desc_rect = cells[j]
+        heads, descs = [], []
+        for item in items:
             parts = item.split("|", 1)
-            head = parts[0].strip()
-            desc = parts[1].strip() if len(parts) > 1 else ""
+            heads.append(parts[0].strip())
+            descs.append(parts[1].strip() if len(parts) > 1 else "")
+        hrects = [QRectF(c[1].x(), yline - h * 0.17, c[1].width(), h * 0.14) for c in cells[: len(items)]]
+        drects = [QRectF(c[2].x(), yline + h * 0.045, c[2].width(), h * 0.33) for c in cells[: len(items)]]
+        hs = paired(heads, hrects, 0.022, 0.013, QFont.Medium, 3)
+        ds = paired(descs, drects, 0.017, 0.0115)
+        for j in range(len(items)):
+            xx = cells[j][0]
             p.setBrush(QColor(accent_for(j)))
             p.setPen(Qt.NoPen)
             p.drawEllipse(QRectF(xx - w * 0.008, yline - w * 0.008, w * 0.016, w * 0.016))
-            hf = fit_font(head, sans, QFont.Normal, int(h * 0.022), int(h * 0.015), head_rect, 2)
-            df = fit_font(desc, sans, QFont.Normal, int(h * 0.017), int(h * 0.012), desc_rect, 4)
-            draw_text(
-                p, head_rect, head, hf, t["fg"], Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWordWrap
-            )
-            draw_text(
-                p, desc_rect, desc, df, t["muted"], Qt.AlignCenter | Qt.AlignTop | Qt.TextWordWrap
-            )
+            text(hrects[j], heads[j], 0.022, 0.013, t["fg"], QFont.Medium, HC | B, 3, "milestone",
+                 size=hs)
+            text(drects[j], descs[j], 0.017, 0.0115, t["muted"], QFont.Normal, HC | T, None,
+                 "milestone", size=ds)
+        if hidden:
+            more(QRectF(x + m, y + h * 0.88, w - 2 * m, h * 0.04), hidden, R | VC)
     elif layout == "QUOTE":
-        # Editorial quote: oversized punctuation is deliberately low contrast so
-        # the words remain the visual subject.
-        draw_text(
-            p,
-            QRectF(x + m, y + h * 0.12, w * 0.18, h * 0.20),
-            "“",
-            QFont(sans, max(28, int(h * 0.16)), QFont.Black),
-            t["rule"],
-            Qt.AlignLeft | Qt.AlignTop,
-        )
-        p.fillRect(QRectF(x + m, y + h * 0.28, max(2, w * 0.003), h * 0.43), QColor(t["accent"]))
-        q = QRectF(x + m + w * 0.045, y + h * 0.23, w * 0.76, h * 0.42)
-        hero(q, title, 0.070, 0.034)
-        draw_text(
-            p,
-            QRectF(q.x(), y + h * 0.70, q.width(), h * 0.08),
-            body,
-            QFont(sans, max(10, int(h * 0.022))),
-            t["muted"],
-        )
+        text(QRectF(x + m, y + h * 0.10, w * 0.18, h * 0.20), "“", 0.16, 0.08, t["rule"],
+             QFont.Black, L | T, 1, "label", markup=False, scaled=False)
+        p.fillRect(QRectF(x + m, y + h * 0.26, max(2, w * 0.003), h * 0.45), QColor(t["accent"]))
+        q = QRectF(x + m + w * 0.045, y + h * 0.20, w * 0.80, h * 0.48)
+        hero(q, title, 0.068, 0.028, lines=6)
+        bodytxt(QRectF(q.x(), y + h * 0.71, q.width(), h * 0.13), body, L | T, 0.022, 0.013,
+                lines=3)
     elif layout == "BIG NUMBER":
-        f = fit_font(
-            title,
-            sans,
-            QFont.Black,
-            int(h * 0.23),
-            int(h * 0.10),
-            QRectF(x + m, y + h * 0.22, w - 2 * m, h * 0.38),
-            1,
-        )
-        draw_text(
-            p,
-            QRectF(x + m, y + h * 0.20, w - 2 * m, h * 0.42),
-            title,
-            f,
-            t["accent"],
-            Qt.AlignLeft | Qt.AlignVCenter,
-        )
-        bodytxt(QRectF(x + m, y + h * 0.64, w * 0.72, h * 0.14), body)
+        text(QRectF(x + m, y + h * 0.16, w - 2 * m, h * 0.44), title, 0.23, 0.04, t["accent"],
+             QFont.Black, L | VC, 1, "number", wrap=False)
+        bodytxt(QRectF(x + m, y + h * 0.63, w * 0.78, h * 0.24), body, L | T, 0.027, 0.014)
     elif layout == "SECTION":
-        # Strong chapter divider: optional numeric prefix becomes a large section marker.
         sm = re.match(r"^\s*(\d{1,2})[. :–—-]+(.*)$", title)
         if sm:
-            draw_text(
-                p,
-                QRectF(x + m, y + h * 0.17, w * 0.18, h * 0.18),
-                sm.group(1).zfill(2),
-                QFont(sans, max(18, int(h * 0.10))),
-                t["accent"],
-                Qt.AlignLeft | Qt.AlignVCenter,
-            )
+            text(QRectF(x + m, y + h * 0.10, w * 0.18, h * 0.16), sm.group(1).zfill(2), 0.10,
+                 0.05, t["accent"], QFont.Normal, L | VC, 1, "label", markup=False)
             section_title = sm.group(2).strip()
         else:
             section_title = title
-        p.fillRect(QRectF(x + m, y + h * 0.48, w * 0.10, max(2, h * 0.006)), QColor(t["accent"]))
-        hero(QRectF(x + m, y + h * 0.27, w * 0.78, h * 0.20), section_title, 0.07, 0.036)
-        bodytxt(QRectF(x + m + w * 0.14, y + h * 0.51, w * 0.64, h * 0.12), body)
+        p.fillRect(QRectF(x + m, y + h * 0.53, w * 0.10, max(2, h * 0.006)), QColor(t["accent"]))
+        hero(QRectF(x + m, y + h * 0.27, w * 0.82, h * 0.24), section_title, 0.07, 0.032,
+             base_align | B, 3)
+        bodytxt(QRectF(x + m + w * 0.14, y + h * 0.57, w * 0.66, h * 0.27), body, L | T)
     elif layout == "END":
-        hero(
-            QRectF(x + m, y + h * 0.27, w - 2 * m, h * 0.22),
-            title,
-            0.085,
-            0.04,
-            Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWordWrap,
-        )
-        bodytxt(
-            QRectF(x + m, y + h * 0.51, w - 2 * m, h * 0.16),
-            body,
-            Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWordWrap,
-        )
+        hero(QRectF(x + m, y + h * 0.20, w - 2 * m, h * 0.30), title, 0.085, 0.036, HC | B, 3)
+        bodytxt(QRectF(x + m, y + h * 0.52, w - 2 * m, h * 0.20), body, HC | T)
         if not t.get("uddevalla"):
             p.fillRect(
-                QRectF(x + w * 0.45, y + h * 0.74, w * 0.10, max(2, h * 0.006)), QColor(t["accent"])
+                QRectF(x + w * 0.45, y + h * 0.76, w * 0.10, max(2, h * 0.006)), QColor(t["accent"])
             )
     elif layout == "STATEMENT":
-        hero(QRectF(x + m, y + h * 0.24, w - 2 * m, h * 0.38), title, 0.095, 0.045)
+        hero(QRectF(x + m, y + h * 0.17, w - 2 * m, h * 0.47), title, 0.095, 0.036, lines=5)
         p.fillRect(QRectF(x + m, y + h * 0.67, w * 0.10, max(2, h * 0.006)), QColor(t["accent"]))
-        bodytxt(QRectF(x + m, y + h * 0.70, w * 0.75, h * 0.12), body)
+        bodytxt(QRectF(x + m, y + h * 0.70, w * 0.80, h * 0.20), body, L | T)
     elif layout == "TEXT":
-        hero(QRectF(x + m, y + h * 0.18, w * 0.78, h * 0.16), title, 0.06, 0.034)
-        p.fillRect(QRectF(x + m, y + h * 0.36, w * 0.07, max(2, h * 0.004)), QColor(t["accent"]))
-        bodytxt(QRectF(x + m, y + h * 0.40, w * 0.78, h * 0.38), body)
+        hero(QRectF(x + m, y + h * 0.12, w * 0.80, h * 0.20), title, 0.06, 0.028, lines=3)
+        p.fillRect(QRectF(x + m, y + h * 0.35, w * 0.07, max(2, h * 0.004)), QColor(t["accent"]))
+        bodytxt(QRectF(x + m, y + h * 0.39, w * 0.80, h * 0.51), body, L | T)
+    elif layout == "CODE":
+        has_title = bool(str(title).strip())
+        if has_title:
+            hero(QRectF(x + m, y + h * 0.07, w * 0.80, h * 0.11), title, 0.042, 0.022, lines=2)
+        panel = QRectF(x + m, y + h * (0.20 if has_title else 0.09), w - 2 * m,
+                       h * (0.70 if has_title else 0.81))
+        bg = QColor(t["fg"])
+        bg.setAlpha(18)
+        p.fillRect(panel, bg)
+        p.fillRect(QRectF(panel.x(), panel.y(), max(2, w * 0.003), panel.height()),
+                   QColor(t["accent"]))
+        code = str(body or "").replace("\r\n", "\n").expandtabs(4).strip("\n")
+        inner = panel.adjusted(w * 0.022, h * 0.03, -w * 0.018, -h * 0.03)
+        text(inner, code, 0.030, 0.0135, t["fg"], QFont.Normal, L | T, None, "code",
+             family=mono_font, markup=False, wrap=False)
     else:  # TITLE
-        hero(QRectF(x + m, y + h * 0.25, w * 0.82, h * 0.25), title, 0.09, 0.04)
+        tw = w * (0.53 if img else 0.82)
+        hero(QRectF(x + m, y + h * 0.16, tw, h * 0.35), title, 0.09, 0.034, base_align | B, 4)
         p.fillRect(QRectF(x + m, y + h * 0.54, w * 0.10, max(2, h * 0.006)), QColor(t["accent"]))
-        bodytxt(QRectF(x + m, y + h * 0.58, w * 0.75, h * 0.13), body)
+        bodytxt(QRectF(x + m, y + h * 0.58, w * (0.53 if img else 0.75), h * 0.25), body, L | T)
         if img:
-            draw_image(
-                p,
-                QRectF(x + w * 0.64, y + h * 0.18, w * 0.30, h * 0.62),
-                img,
-                mode,
-                mono,
-                fx,
-                fy,
-                0.92,
-                br,
-                ct,
-                ov,
-                bl,
-            )
+            draw_image(p, QRectF(x + w * 0.64, y + h * 0.18, w * 0.30, h * 0.62), img, mode, mono,
+                       fx, fy, 0.92, br, ct, ov, bl)
     if s.get("imageRequest") and not s.get("image"):
-        f = QFont(mono_font, max(8, int(h * 0.014)))
-        draw_text(
-            p,
-            QRectF(x + w * 0.60, y + h * 0.90, w * 0.34, h * 0.04),
-            "IMAGE REQUEST  ·  " + s.get("imageRequest", ""),
-            f,
-            t["muted"],
-            Qt.AlignRight | Qt.AlignVCenter | Qt.TextSingleLine,
-        )
+        textfit.fit_draw(p, QRectF(x + w * 0.60, y + h * 0.90, w * 0.34, h * 0.035),
+                         "IMAGE REQUEST  ·  " + s.get("imageRequest", ""), mono_font,
+                         QFont.Normal, px(0.014, 6), px(0.014, 6), QColor(t["muted"]),
+                         R | VC, 1, "request", False)
     if theme_name == "SATIE":
         p.setPen(QColor(t["rule"]))
         p.drawLine(int(x + w * 0.80), int(y + h * 0.09), int(x + w * 0.94), int(y + h * 0.09))
         p.drawLine(int(x + w * 0.94), int(y + h * 0.09), int(x + w * 0.94), int(y + h * 0.18))
     if theme_name == "CARL LARSSON":
-        # Warm domestic palette: Falun red, sage, blue-grey and ochre.
-        # Keep it architectural and quiet: no decorative dots or enclosing frame.
         palette = t.get("palette", ["#A33E32", "#557A68", "#66859A", "#C39A45"])
         band_w = w * 0.022
         band_h = max(2, h * 0.004)
         for j, c in enumerate(palette):
             p.fillRect(QRectF(x + m + j * band_w, y + h * 0.925, band_w * 0.72, band_h), QColor(c))
     if t.get("uddevalla"):
-        # Uddevalla identity: one restrained accent edge; logo artwork is never recoloured.
         p.fillRect(QRectF(x, y, w * 0.010, h), QColor(t["accent"]))
         logo_mode = str(s.get("logoMode", "AUTO")).upper()
         auto_layout = layout in ("TITLE", "SECTION", "END")
         want_logo = show_logo and logo_mode != "OFF" and (logo_mode == "ON" or auto_layout)
         if want_logo:
-            # Full-bleed imagery has unknown luminance: use the supplied white-disc logo.
             if layout == "FULL BLEED":
                 logo_path = BRANDING / "uddevalla-white-disc.png"
             else:
@@ -1859,13 +1737,12 @@ def render_slide(
                 logo_path = BRANDING / (
                     "uddevalla-light.png" if lum >= 0.55 else "uddevalla-dark.png"
                 )
-            # AUTO placement keeps clear of the dominant content region for each layout.
             side = h * 0.135
             if layout == "END":
                 lr = QRectF(x + w * 0.5 - side * 0.5, y + h * 0.755, side, side)
             elif layout in ("SPLIT", "IMAGE + QUOTE"):
                 lr = QRectF(x + m, y + h * 0.80, side, side)
-            elif layout in ("IMAGE", "PHOTO", "FULL BLEED"):
+            elif layout in ("IMAGE", "PHOTO", "FULL BLEED", "IMAGE + CAPTION"):
                 lr = QRectF(x + w - side - w * 0.035, y + h * 0.035, side, side)
             elif layout == "TITLE" and img:
                 lr = QRectF(x + m, y + h * 0.805, side, side)
@@ -1882,19 +1759,62 @@ def render_slide(
                 dy = lr.y() + (lr.height() - scaled.height()) / 2
                 p.drawPixmap(int(dx), int(dy), scaled)
     if footer_text and layout != "FULL BLEED":
-        # Footer is deck metadata: always subtle, but configurable. Keep it inside
-        # a conservative safe area so long text cannot collide with edge branding.
         footer_align = normalize_footer_align(footer_align)
         footer_size = normalize_footer_size(footer_size)
         size_factor = {"SMALL": 0.010, "MEDIUM": 0.012, "LARGE": 0.014}[footer_size]
-        ff = QFont(sans, max(7, int(h * size_factor)))
-        footer_flags = (
-            {"LEFT": Qt.AlignLeft, "CENTER": Qt.AlignHCenter, "RIGHT": Qt.AlignRight}[footer_align]
-            | Qt.AlignVCenter
-            | Qt.TextSingleLine
-        )
-        footer_rect = QRectF(x + m, y + h * 0.938, w - 2 * m, h * 0.035)
-        fm = QFontMetrics(ff)
-        shown = fm.elidedText(str(footer_text), Qt.ElideRight, max(1, int(footer_rect.width())))
-        draw_text(p, footer_rect, shown, ff, t["muted"], footer_flags)
+        flags = {"LEFT": Qt.AlignLeft, "CENTER": Qt.AlignHCenter, "RIGHT": Qt.AlignRight}[
+            footer_align
+        ] | Qt.AlignVCenter
+        fpx = px(size_factor, 7)
+        textfit.fit_draw(p, QRectF(x + m, y + h * 0.938, w - 2 * m, h * 0.035), str(footer_text),
+                         sans, QFont.Normal, fpx, fpx, QColor(t["muted"]), flags, 1, "footer",
+                         False)
     p.restore()
+
+
+def slide_fit_issues(s, data, index=0, width=1920, height=1080):
+    """Render one slide offscreen and return its fit problems.
+
+    Returns a list of human sentences such as "text does not fit (title)" or
+    "3 items hidden". Results are cached by slide content.
+    """
+    key = json.dumps(
+        [s, data.get("theme"), data.get("fontFamily"), data.get("footerText"),
+         data.get("footerSize"), data.get("showNumbers"), width, height],
+        sort_keys=True, default=str,
+    )
+    hit = _FIT_CACHE.get(key)
+    if hit is not None:
+        _FIT_CACHE.move_to_end(key)
+        return list(hit)
+    report = []
+    pic = QPicture()
+    qp = QPainter(pic)
+    try:
+        render_slide(
+            qp, QRectF(0, 0, width, height), s, data.get("theme", "B&W"), index,
+            len(data.get("slides", [])) or 1, data.get("showNumbers", False),
+            data.get("fontFamily", "Noto Sans"), data.get("showLogo", True),
+            data.get("footerText", ""), data.get("footerAlign", "LEFT"),
+            data.get("footerSize", "MEDIUM"), report=report,
+        )
+    finally:
+        if qp.isActive():
+            qp.end()
+    out = []
+    clipped = sorted({r.get("label", "text") for r in report if r["kind"] == "clipped"
+                      and r.get("label") not in ("footer", "request", "label", "more")})
+    if clipped:
+        out.append("text does not fit (" + ", ".join(clipped) + ")")
+    for r in report:
+        if r["kind"] == "hidden":
+            n = r.get("count", 0)
+            out.append(f"{n} {r.get('label', 'items')} hidden" if n != 1 else
+                       f"1 {r.get('label', 'items').rstrip('s')} hidden")
+    _FIT_CACHE[key] = list(out)
+    if len(_FIT_CACHE) > 2000:
+        _FIT_CACHE.popitem(last=False)
+    return out
+
+
+_FIT_CACHE = OrderedDict()

@@ -28,6 +28,9 @@ def isolate_user_data():
         path = os.path.join(root, var.lower())
         os.makedirs(path, exist_ok=True)
         os.environ[var] = path
+    # Never let a gate run switch Do Not Disturb or presenting mode in the
+    # real NIRUWM session; tests that need niructl point this at a fake.
+    os.environ["NIRUPRES_NIRUCTL"] = "none"
     atexit.register(shutil.rmtree, root, True)
     _ISOLATED_ROOT = root
     return root

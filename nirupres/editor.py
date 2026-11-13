@@ -157,9 +157,14 @@ class LayoutPicker(QDialog):
             "SECTION": "Chapter divider",
             "FULL BLEED": "Immersive image",
             "END": "Closing / contact",
+            "VIDEO": "Video + caption",
+            "VIDEO + TEXT": "Video + talking points",
+            "CODE": "Code, monospace, auto-fit",
+            "IMAGE + CAPTION": "Figure + longer caption",
+            "THREE COLUMN": "Three text columns",
         }
         for n, name in enumerate(LAYOUTS):
-            b = QPushButton(f"{name}\n{hints[name]}")
+            b = QPushButton(f"{name}\n{hints.get(name, '')}")
             b.setMinimumSize(168, 76)
             b.clicked.connect(lambda _=False, x=name: self.pick(x))
             g.addWidget(b, n // 4, n % 4)
@@ -425,6 +430,9 @@ class TextEditor(QDialog):
                 "TABLE": "One row per line · separate columns with |",
                 "BULLETS": "One list item per line",
                 "AGENDA": "One agenda item per line",
+                "CODE": "Code exactly as written · no **bold** parsing · shrinks to fit",
+                "THREE COLUMN": "Separate the three columns with a line that is only |||",
+                "IMAGE + CAPTION": "Caption text under the image",
             }
             if self.layout in hints:
                 hint = QLabel(hints[self.layout])

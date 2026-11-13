@@ -173,7 +173,10 @@ def export_nirupres_markdown(data):
         if s.get("caption"):
             lines.append(f'caption: {s.get("caption")}')
         lines += ["-->", "", f'# {s.get("title","")}'.rstrip(), ""]
-        if s.get("body"):
+        if s.get("body") and s.get("layout") == "CODE":
+            # A fence keeps indentation and blank lines of code exactly.
+            lines += ["```", str(s.get("body", "")).replace("```", "``\u200b`"), "```", ""]
+        elif s.get("body"):
             lines += [s.get("body", ""), ""]
         if s.get("notes"):
             lines += ["<!-- notes", s.get("notes", ""), "-->", ""]
@@ -220,6 +223,11 @@ def import_nirupres_markdown(text, base_dir=None):
             body = "\n".join(ls[1:]).strip()
         else:
             body = clean
+        if layout == "CODE":
+            ls_raw = re.sub(r"<!--.*?-->", "", part, flags=re.S).split("\n")
+            fence = [n for n, q in enumerate(ls_raw) if q.strip().startswith("```")]
+            if len(fence) >= 2:
+                body = "\n".join(ls_raw[fence[0] + 1 : fence[-1]]).replace("``\u200b`", "```")
         img = meta.get("image", "")
         if img and re.match(r"^[a-zA-Z]+://", img):
             img = ""

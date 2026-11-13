@@ -102,6 +102,7 @@ from .markdown_io import _md_bool, _meta_block
 from . import theme as chrome_theme
 from . import profile as org_profile
 from .talk import TalkSession
+from .presenting import recover_stale as recover_presenting
 from .ui_toolbar import ToolbarMixin
 from .ui_inspector import InspectorMixin
 from .ui_slides import SlideListMixin
@@ -138,6 +139,8 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
         self.apply_chrome()
         self.refit_text()
         self.reload_recents()
+        # Undo Do Not Disturb left on by a presentation that crashed (2.3).
+        QTimer.singleShot(0, recover_presenting)
         self.refresh()
         self.push_history()
         self.autotimer = QTimer(self)
@@ -801,6 +804,7 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
                         self.data.get("footerText", ""),
                         self.data.get("footerAlign", "LEFT"),
                         self.data.get("footerSize", "MEDIUM"),
+                        deck=self.data,
                     ),
                 )
                 self.list.itemWidget(it).setAccessibleName(self.slide_accessible_text(i))
@@ -1060,6 +1064,7 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
                     self.data.get("footerText", ""),
                     self.data.get("footerAlign", "LEFT"),
                     self.data.get("footerSize", "MEDIUM"),
+                    deck=self.data,
                 ),
             )
             self.list.itemWidget(it).setAccessibleName(self.slide_accessible_text(i))
@@ -1496,6 +1501,12 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
             "VIDEO": ("Video", "Optional caption"),
             "VIDEO + TEXT": ("Video + context", "Key context or talking points"),
             "END": ("Thank you", "Questions / contact"),
+            "CODE": ("Example", 'def greet(name):\n    return f"Hello, {name}"\n\nprint(greet("NIRUPRES"))'),
+            "IMAGE + CAPTION": ("Figure title", "What the picture shows and why it matters"),
+            "THREE COLUMN": (
+                "Three options",
+                "**Option A**\nFast to start\n\n|||\n\n**Option B**\nBalanced\n\n|||\n\n**Option C**\nMost complete",
+            ),
         }
         t, b = defaults.get(d.choice, ("", ""))
         self.data["slides"].insert(i, slide_defaults({"layout": d.choice, "title": t, "body": b}))
@@ -2197,11 +2208,18 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
                 issues.append((i, "ERROR", f'Missing image: {s.get("image")}'))
             if s.get("imageRequest") and not s.get("image"):
                 issues.append((i, "TODO", f'Unresolved image request: {s.get("imageRequest")}'))
+            # 2.3: render the slide offscreen and report real overflow.
+            try:
+                for problem in slide_fit_issues(s, self.data, i):
+                    issues.append((i, "WARN", problem[:1].upper() + problem[1:]))
+            except Exception as exc:  # never block the health check on a render error
+                issues.append((i, "WARN", f"Could not check text fit: {exc}"))
             if s.get("layout") in (
                 "IMAGE",
                 "PHOTO",
                 "HERO IMAGE",
                 "IMAGE + QUOTE",
+                "IMAGE + CAPTION",
                 "FULL BLEED",
             ) and not (s.get("image") or s.get("imageRequest")):
                 issues.append((i, "WARN", f'{s.get("layout")} layout has no image'))
@@ -2290,35 +2308,96 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
         d.exec()
         return issues
 
+    def _display_prefs(self):
+        try:
+            prefs = json.loads(DISPLAY_PREFS.read_text(encoding="utf-8"))
+            return prefs if isinstance(prefs, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_display_prefs(self, **changes):
+        prefs = self._display_prefs()
+        prefs.update(changes)
+        prefs = {k: v for k, v in prefs.items() if v is not None}
+        try:
+            DISPLAY_PREFS.parent.mkdir(parents=True, exist_ok=True)
+            DISPLAY_PREFS.write_text(json.dumps(prefs), encoding="utf-8")
+        except OSError:
+            pass
+
+    def single_screen_choice(self, ask=False):
+        """F5 on one screen: laptop presenter mode (online) or slides only.
+
+        Returns "laptop", "slides" or None (cancelled). A remembered choice is
+        used unless ``ask`` is true.
+        """
+        remembered = self._display_prefs().get("singleScreen")
+        if remembered in ("laptop", "slides") and not ask:
+            return remembered
+        d = QDialog(self)
+        d.setWindowTitle("Present on one screen")
+        d.setMinimumWidth(520)
+        v = QVBoxLayout(d)
+        head = QLabel("ONE SCREEN")
+        head.setObjectName("aboutTag")
+        v.addWidget(head)
+        info = QLabel(
+            "Only one display is connected.\n\n"
+            "Laptop presenter (Teams, Meet, Zoom): your private presenter view with notes, "
+            "next slide and timer fills the screen. Share the window "
+            "“AUDIENCE · share this · NIRUPRES”.\n\n"
+            "Slides only: the slides fill the screen, for a projector that mirrors this screen."
+        )
+        info.setWordWrap(True)
+        v.addWidget(info)
+        remember = QCheckBox("Remember my choice (Presenter View… asks again)")
+        v.addWidget(remember)
+        row = QHBoxLayout()
+        cancel = QPushButton("Cancel")
+        slides = QPushButton("Slides only")
+        laptop = QPushButton("Laptop presenter")
+        laptop.setDefault(True)
+        result = {"choice": None}
+        cancel.clicked.connect(d.reject)
+        slides.clicked.connect(lambda: (result.update(choice="slides"), d.accept()))
+        laptop.clicked.connect(lambda: (result.update(choice="laptop"), d.accept()))
+        row.addWidget(cancel)
+        row.addStretch()
+        row.addWidget(slides)
+        row.addWidget(laptop)
+        v.addLayout(row)
+        if d.exec() != QDialog.Accepted:
+            return None
+        if remember.isChecked() and result["choice"]:
+            self._save_display_prefs(singleScreen=result["choice"])
+        elif ask:
+            self._save_display_prefs(singleScreen=None)
+        return result["choice"]
+
     def presenter_view(self):
         screens = QApplication.screens()
         if len(screens) < 2:
-            message_info(
-                self,
-                "Presenter View",
-                "Only one display is currently available. Starting normal presentation instead.",
-            )
-            self.present(False)
+            choice = self.single_screen_choice(ask=True)
+            if choice == "laptop":
+                self.online_present(False)
+            elif choice == "slides":
+                self.present(False, single_choice="slides")
             return
         d = DisplaySetup(self)
         if d.exec() != QDialog.Accepted:
             return
         ps, aus = d.selection()
-        try:
-            DISPLAY_PREFS.write_text(
-                json.dumps({"presenter": ps.name(), "audience": aus.name()}), encoding="utf-8"
-            )
-        except:
-            pass
-        self.present(False, ps, aus)
+        self._save_display_prefs(presenter=ps.name(), audience=aus.name())
+        if ps == aus:
+            self.present(False, ps, aus, online=True)
+        else:
+            self.present(False, ps, aus)
 
     def online_present(self, from_start=False):
         # Windowed Audience output for Teams/Meet/Zoom. No service integration is
         # required: share the window titled "NIRUPRES — Audience · SHARE THIS WINDOW".
         screen = self.screen() or QApplication.primaryScreen()
         self.present(from_start, screen, screen, online=True)
-        if self.presenter is not None:
-            self.statusBar().showMessage("ONLINE: share only the NIRUPRES — Audience window", 5000)
 
     def presentation_overview(self):
         d = QDialog(self)
@@ -2347,7 +2426,12 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
 
     def _presentation_finished(self):
         self.presenter = None
+        # The editor was hidden while presenting so it can never be shared or
+        # seen behind the presenter view; bring it back now.
         self.show()
+        if getattr(self, "_quit_on_last", None) is not None:
+            QApplication.instance().setQuitOnLastWindowClosed(self._quit_on_last)
+            self._quit_on_last = None
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.OtherFocusReason)
@@ -2359,6 +2443,7 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
         audience_screen=None,
         online=False,
         talk=False,
+        single_choice=None,
     ):
         if self.presenter is not None:
             self.presenter.close_session()
@@ -2373,6 +2458,14 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
             return
         start = 0 if from_start else max(0, self.list.currentRow())
         screens = QApplication.screens()
+        if len(screens) < 2 and not online and not talk:
+            # 2.3: F5 on one screen offers the laptop presenter mode instead of
+            # silently starting without a presenter view.
+            choice = single_choice or self.single_screen_choice()
+            if choice is None:
+                return
+            if choice == "laptop":
+                online = True
         primary = QApplication.primaryScreen()
         if presenter_screen is None:
             presenter_screen = self.screen() or primary
@@ -2390,10 +2483,24 @@ class Main(ToolbarMixin, InspectorMixin, SlideListMixin, QMainWindow):
             audience_screen = next(
                 (x for x in screens if x.name() == prefs.get("audience")), None
             ) or next((x for x in screens if x != presenter_screen), presenter_screen)
+        if online:
+            presenter_screen = presenter_screen or self.screen() or primary
+            audience_screen = presenter_screen
+        app = QApplication.instance()
+        self._quit_on_last = app.quitOnLastWindowClosed()
+        app.setQuitOnLastWindowClosed(False)
         self.presenter = Presenter(
-            self.data, start, presenter_screen, audience_screen, online=online, talk=talk
+            self.data,
+            start,
+            presenter_screen,
+            audience_screen,
+            online=online,
+            talk=talk,
+            style=self.styleSheet(),
+            share_check=online and not talk,
         )
         self.presenter.finished.connect(self._presentation_finished)
+        self.hide()
 
 
 def _clock_at(timestamp):

@@ -1,3 +1,18 @@
+# Upgrading to NIRUPRES 2.3.0
+
+2.3.0 keeps project format 9 and Markdown format 2; decks open unchanged.
+
+- **Text sizes are now pixels.** Slides look the same as before on a normal
+  96 dpi screen and now also the same on HiDPI screens and in exports. Text
+  that used to run out of its box now shrinks or ends with an ellipsis; check
+  Deck health (`Ctrl+K`) for slides marked **FIT**.
+- New layouts CODE, IMAGE + CAPTION and THREE COLUMN are appended to the
+  layout list; older versions cannot show slides that use them correctly.
+- Window titles changed: share `AUDIENCE · share this · NIRUPRES`. Window
+  rules that matched the old audience window title should match the
+  WM_CLASS `nirupres-audience` instead.
+- F5 on one screen now asks for laptop presenter or slides only.
+
 # Upgrading to NIRUPRES 2.2.x
 
 2.2.1 changes only the installer and adds `uninstall.sh`.

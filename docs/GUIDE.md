@@ -17,6 +17,32 @@ a deck must look the same on every machine.
   persisted. Without NIRUX, the original monochrome Noir chrome is used.
 - `nirupres --check-config` reports the effective source and data root.
 
+## Presenting online and in the NIRUX session
+
+See "Presenting in Teams, Meet or Zoom" in the README for the user steps.
+Technical details:
+
+- Window identity: the audience window has WM_CLASS
+  (`nirupres-audience`, `NIRUPRES`) and title `AUDIENCE · share this · NIRUPRES`;
+  the presenter view (`nirupres-presenter`, `NIRUPRES`) and title
+  `PRIVATE presenter · do not share`; the editor keeps (`nirupres`, `NIRUPRES`).
+  These are set on X11 only (Wayland compositors choose their own picker names).
+- The audience window carries `_NIRUWM_KEEP_MAPPED` = 1 (CARDINAL). NIRUWM then
+  moves it off screen instead of unmapping it when its workspace is hidden, so a
+  window share keeps receiving frames.
+- Presenting mode: `niructl present on --pid <pid>` at start and
+  `niructl present off` at the end. Without `present` (older NIRUWM) the
+  fallback is `niructl dnd on` and, at the end, `niructl dnd off` only if Do Not
+  Disturb was off before. The fallback state is kept in
+  `~/.local/share/nirupres/presenting.json` and repaired on the next start
+  after a crash. `NIRUPRES_NIRUCTL=/path/to/niructl` overrides the binary and
+  `NIRUPRES_NIRUCTL=none` disables it (the release gate does this).
+- Text fitting: every slide text is laid out with QTextLayout at a pixel size,
+  shrunk to its layout minimum, then cut with an ellipsis inside its box.
+  `tests/template_fit.py` renders every layout with short, normal, long and very
+  long text and fails on any overflow (`python3 tests/template_fit.py --out DIR`
+  writes the PNGs).
+
 ## Talk mode
 
 The **TALK** toolbar menu starts a presentation from the beginning and records

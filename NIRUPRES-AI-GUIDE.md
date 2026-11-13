@@ -14,6 +14,15 @@ The AI brief contains the Markdown v2 grammar, supported layouts/themes/transiti
 For images, AI should use `image-query:` rather than inventing a local path. Add the actual image in NIRUPRES afterward.
 
 
+## Layouts added in 2.3
+
+Use CODE for a short code sample (put the body in a fenced code block, keep it
+under about 20 lines), IMAGE + CAPTION when a picture needs two or three
+sentences of explanation, THREE COLUMN for three parallel options (separate
+the columns with `|||` lines) and TABLE for comparisons (header row first, at
+most 6 columns and 8 rows). Text that does not fit is cut, so keep slides
+short.
+
 ## Layout selection in 1.2
 
 Prefer semantic composition over generic text slides: AGENDA for navigation, PROCESS for sequential work, TIMELINE for dated milestones, COMPARE for two states/options, DATA / KPI for one dominant metric plus supporting measures, NUMBER GRID for peer metrics, MATRIX for a four-part framework, TABLE for compact structured facts, HERO IMAGE for image-led storytelling, STATEMENT for one decisive message, and SECTION to create rhythm between chapters. Keep slides concise; NIRUPRES typography adapts to content density, but brevity produces the strongest result.
