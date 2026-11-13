@@ -254,7 +254,7 @@ class Thumb(QWidget):
                 "padding:1px 4px;border-radius:2px}"
             )
             badge.adjustSize()
-            badge.move(c.width() - badge.width() - 3, 3)
+            badge.move(3, 3)
             badge.setToolTip("Text does not fit:\n" + "\n".join(self.fit_issues))
             self.setToolTip("Deck health: " + "; ".join(self.fit_issues))
         flags = (
