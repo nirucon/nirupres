@@ -23,7 +23,7 @@ APP_INSTANCE = QApplication.instance() or QApplication([])
 import nirupres
 from nirupres import main as m
 
-EXPECTED_VERSION = "2.3.0"
+EXPECTED_VERSION = "2.4.0"
 
 
 def check(cond, msg):
@@ -1133,11 +1133,9 @@ def main():
         "Pause duration accounting failed",
     )
     QTest.keyClick(session.audience, Qt.Key_Escape)
-    QTest.qWait(2050)
+    QTest.qWait(m.CLOSE_FADE_MS + 150)
     app.processEvents()
-    check(
-        not ended and session._black_hold, "cinematic closing did not enter five-second black hold"
-    )
+    check(not ended and session._black_hold, "cinematic closing did not enter the black hold")
     QTest.keyClick(session.audience, Qt.Key_Escape)
     QTest.qWait(50)
     app.processEvents()
@@ -1187,6 +1185,13 @@ def main():
     check(
         not qt_callback_errors,
         f"Qt callback error in 2.3 checks: {qt_callback_errors[0][1] if qt_callback_errors else ''}",
+    )
+    import gate_24
+
+    gate_24.run(m, app, check)
+    check(
+        not qt_callback_errors,
+        f"Qt callback error in 2.4 checks: {qt_callback_errors[0][1] if qt_callback_errors else ''}",
     )
     sys.excepthook = original_excepthook
 

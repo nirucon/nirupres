@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.4.0: Fades you can see, aim from the presenter view
+
+- **The opening and closing fades are visible again.** In laptop and online
+  mode the fades ran only in the audience window, which the presenter view
+  covers, so on your own screen nothing happened (and the end looked like a
+  7 second freeze). The **CURRENT** preview in the presenter view now shows the
+  same fade, and the opening waits until the audience window is really on
+  screen before it starts. Fade in 0.9 s from black, fade out 0.8 s to black,
+  then 1 s black and the presentation closes (it was 1.75 s + 5 s). `Esc`
+  again closes at once; Esc during the opening fades out from where it is.
+- **Aim from the presenter view.** Point at CURRENT with the mouse to aim
+  Spotlight (`S`), Focus Reveal (`F`), Zoom (`Z`) and `[` `]` on the audience
+  window; click to pin. CURRENT shows the spotlight, focus, zoom and slide
+  transitions the audience sees. Works in laptop, online and docked mode.
+- **Next on the last slide** fades the slides to black ("END OF SLIDES" in the
+  presenter view); Next or `Esc` again ends, Previous fades back in. The NEXT
+  pane says "End of presentation" on the last slide.
+- The presenter view says "ENDING · press Esc again to close now" while the
+  show fades out.
+- Fixed: speaker notes started at 13 px instead of the remembered A−/A+ size
+  until a size button was pressed.
+- Fixed: every key with a modifier (Ctrl, Shift, Super) raised an error with
+  PySide6 6.12, and a typed slide number + `Enter` did not jump.
+- Fixed: Zoom near a slide edge showed the unzoomed slide in a strip; the
+  zoomed slide now always fills the view, and the spotlight veil rests while
+  zoomed instead of drawing a second, misplaced hole.
+- Fixed: with a compositor that dims inactive windows (picom
+  `inactive-opacity`), the slides on a projector and the presenter view became
+  slightly see-through when they lost focus. Both windows now ask to stay
+  fully opaque (`_NET_WM_WINDOW_OPACITY`).
+- Tests: the release gate measures rendered frames of the audience window and
+  the preview during both fades (intermediate brightness, about 0.9 s) and
+  checks the preview to audience aim mapping for 16:9 and 4:3 decks.
+
 ## 2.3.0: Safe online presenting, presenter view, text that fits
 
 - **Safe sharing in Teams, Meet and Zoom.** The audience window is called

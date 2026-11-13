@@ -79,7 +79,7 @@ from PySide6.QtWidgets import (
 from . import textfit
 
 APP = "NIRUPRES"
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 FORMAT = 9
 MD_FORMAT = 2
 TAGLINE = "A minimal, suckless presentation app by Nicklas Rudolfsson."

@@ -85,8 +85,13 @@ def _with_display(fn):
         x.XCloseDisplay(d)
 
 
-def set_window_identity(widget, instance, cls, keep_mapped=False):
-    """Set WM_CLASS (instance, class) and optionally _NIRUWM_KEEP_MAPPED=1."""
+def set_window_identity(widget, instance, cls, keep_mapped=False, opaque=False):
+    """Set WM_CLASS (instance, class) and optionally _NIRUWM_KEEP_MAPPED=1.
+
+    ``opaque`` sets _NET_WM_WINDOW_OPACITY to fully opaque, so a compositor
+    with an inactive-window opacity (picom ``inactive-opacity``) never makes
+    the slides or the presenter view see-through when they lose focus.
+    """
     wid = int(widget.winId())
 
     def run(x, d):
@@ -99,6 +104,12 @@ def set_window_identity(widget, instance, cls, keep_mapped=False):
             one = (ctypes.c_long * 1)(1)
             x.XChangeProperty(
                 d, wid, x.XInternAtom(d, b"_NIRUWM_KEEP_MAPPED", 0), card, 32, 0, one, 1
+            )
+        if opaque:
+            card = x.XInternAtom(d, b"CARDINAL", 0)
+            full = (ctypes.c_ulong * 1)(0xFFFFFFFF)
+            x.XChangeProperty(
+                d, wid, x.XInternAtom(d, b"_NET_WM_WINDOW_OPACITY", 0), card, 32, 0, full, 1
             )
         x.XSync(d, 0)
         return True

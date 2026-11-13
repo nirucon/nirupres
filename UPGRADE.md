@@ -1,3 +1,12 @@
+# Upgrading to NIRUPRES 2.4.0
+
+2.4.0 keeps project format 9 and Markdown format 2; decks open unchanged.
+
+- The closing black hold is 1 second (it was 5); `Esc` twice still closes at
+  once.
+- Next on the last slide now fades to black and a second Next ends the
+  presentation (only when *cinematic close* is on).
+
 # Upgrading to NIRUPRES 2.3.0
 
 2.3.0 keeps project format 9 and Markdown format 2; decks open unchanged.

@@ -125,21 +125,30 @@ While presenting:
 
 | Key | Action |
 |---|---|
-| `Right`, `Down`, `Page Down`, `Space` | Next slide (`Space` plays/pauses a video slide) |
+| `Right`, `Down`, `Page Down`, `Space` | Next slide (`Space` plays/pauses a video slide); on the last slide the slides fade to black, and Next again ends |
 | `Left`, `Up`, `Page Up` | Previous slide |
 | `Home` / `End` | First / last slide |
 | digits, then `Enter` | Jump to that slide |
 | `B` / `W` | Black / white screen |
 | `C` | Curtain |
-| `S` / `F` | Spotlight / focus |
+| `S` / `F` | Spotlight / focus (aim with the mouse over the slides or over CURRENT in the presenter view; click to pin) |
 | `[` / `]` | Smaller / larger spotlight or focus |
-| `Z` | Zoom |
+| `Z` | Zoom in where you aim, and out again |
 | `P` | Pause |
-| `Esc` | End the presentation (press again to skip the fade) |
+| `Esc` | End the presentation: the slides fade to black, then close (press again to close at once) |
 | `Ctrl+-` / `Ctrl++` | Smaller / larger speaker notes (also the A− / A+ buttons; remembered) |
 
 Clicking the audience window goes forward on the right half and back on the
 left half.
+
+A presentation fades in from black when it starts (in an online presentation
+when you press **Start presenting**) and fades out to black when it ends. The
+**CURRENT** slide in the presenter view shows the same fades, slide
+transitions, spotlight, focus and zoom as the audience, so you see what they
+see even when the audience window is behind the presenter view. Point at
+CURRENT with the mouse to aim spotlight, focus and zoom; click it to pin the
+spotlight. Turn the fades off with *cinematic open/close* or *reduce motion* in
+the deck settings.
 
 ## Presenting in Teams, Meet or Zoom
 

@@ -22,6 +22,7 @@ from PySide6.QtCore import (
     QUrl,
     QPointF,
     QVariantAnimation,
+    QObject,
 )
 from PySide6.QtGui import (
     QAction,
@@ -95,6 +96,25 @@ from .foundation import (
 )
 
 
+def _mod_int(mods):
+    """Keyboard modifiers as int; PySide6 6.12 flags no longer convert with int()."""
+    try:
+        return int(mods)
+    except TypeError:
+        return int(getattr(mods, "value", 0))
+
+
+def _aspect_rect(r, aspect):
+    """The letterboxed slide rectangle inside ``r`` for a deck aspect ratio."""
+    r = QRectF(r)
+    ar = {"16:9": 16 / 9, "16:10": 16 / 10, "4:3": 4 / 3, "A4": 297 / 210}.get(aspect, 16 / 9)
+    if r.width() / max(1, r.height()) > ar:
+        nw = r.height() * ar
+        return QRectF(r.x() + (r.width() - nw) / 2, r.y(), nw, r.height())
+    nh = r.width() / ar
+    return QRectF(r.x(), r.y() + (r.height() - nh) / 2, r.width(), nh)
+
+
 class SlideCanvas(QWidget):
     editRequested = Signal()
 
@@ -142,19 +162,14 @@ class SlideCanvas(QWidget):
         self.aspect = aspect
         self.update()
 
+    def slide_rect(self):
+        """Where the slide is drawn inside this widget (widget coordinates)."""
+        return _aspect_rect(self.rect(), self.aspect)
+
     def paintEvent(self, e):
         p = QPainter(self)
         try:
-            r = QRectF(self.rect())
-            ar = {"16:9": 16 / 9, "16:10": 16 / 10, "4:3": 4 / 3, "A4": 297 / 210}.get(
-                self.aspect, 16 / 9
-            )
-            if r.width() / max(1, r.height()) > ar:
-                nw = r.height() * ar
-                r = QRectF((self.width() - nw) / 2, 0, nw, self.height())
-            else:
-                nh = r.width() / ar
-                r = QRectF(0, (self.height() - nh) / 2, self.width(), nh)
+            r = self.slide_rect()
             p.fillRect(self.rect(), QColor("#0B0B0B"))
             p.fillRect(r.adjusted(-1, -1, 1, 1), QColor("#2A2A2A"))
             try:
@@ -289,17 +304,40 @@ class DropLine(QLineEdit):
                 return
 
 
-class TransitionEngine:
-    """Small, allocation-bounded audience transition engine.
+# Whole-show fades (2.4). The opening fade waits until the audience window is
+# really on screen, so it is never spent before the window manager has mapped
+# it; both fades are mirrored in the presenter's CURRENT preview.
+OPEN_FADE_MS = 900
+CLOSE_FADE_MS = 800
+BLACK_HOLD_MS = 1000
+OPEN_SETTLE_MS = 160
+OPEN_WAIT_MAX_MS = 1500
 
-    It animates one snapshot overlay and never touches the slide renderer/model.
-    This keeps editor rendering, exports and Presenter View deterministic.
+
+class TransitionEngine(QObject):
+    """Small, allocation-bounded transition engine for one slide view.
+
+    It animates one snapshot or black cover overlay and never touches the slide
+    renderer/model. This keeps editor rendering, exports and Presenter View
+    deterministic. The black cover follows the view when the window manager
+    resizes it (fullscreen and maximise settle after the first frame).
     """
 
     def __init__(self, view):
+        super().__init__(view)
         self.view = view
         self.overlay = None
         self.group = None
+        self.cover = False
+        view.installEventFilter(self)
+
+    def eventFilter(self, obj, e):
+        if obj is self.view and e.type() == QEvent.Type.Resize and self.cover:
+            try:
+                self.overlay.setGeometry(self.view.rect())
+            except (RuntimeError, AttributeError):
+                pass
+        return False
 
     def stop(self):
         if self.group is not None:
@@ -309,17 +347,20 @@ class TransitionEngine:
                 pass
         if self.overlay is not None:
             try:
+                self.overlay.hide()
                 self.overlay.deleteLater()
             except RuntimeError:
                 pass
         self.group = None
         self.overlay = None
+        self.cover = False
 
     def animate(self, old_pm, mode):
         self.stop()
         if old_pm is None or old_pm.isNull() or mode == "NONE":
             return
         overlay = QLabel(self.view)
+        overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         overlay.setPixmap(old_pm)
         overlay.setScaledContents(True)
         overlay.setGeometry(self.view.rect())
@@ -356,89 +397,171 @@ class TransitionEngine:
             group.addAnimation(geo)
 
         def done():
+            if self.overlay is overlay:
+                self.overlay = None
+                self.group = None
             overlay.deleteLater()
-            self.overlay = None
-            self.group = None
 
         group.finished.connect(done)
         self.overlay = overlay
         self.group = group
         group.start()
 
-    def opening(self, callback=None):
-        # The black cover is created synchronously, before the first compositor frame.
-        # Slide 1 is already rendered underneath it, so deck FADE and Ken Burns never
-        # compete with the show-level opening transition.
-        self.stop()
-        r = self.view.rect()
-        if r.isEmpty():
-            if callback:
-                callback()
-            return
-        overlay = QLabel(self.view)
-        overlay.setStyleSheet("background:#000;border:0")
-        overlay.setGeometry(r)
-        overlay.show()
-        overlay.raise_()
-        effect = QGraphicsOpacityEffect(overlay)
-        overlay.setGraphicsEffect(effect)
-        effect.setOpacity(1.0)
-        fade = QPropertyAnimation(effect, b"opacity", overlay)
-        fade.setDuration(1450)
-        fade.setStartValue(1.0)
-        fade.setEndValue(0.0)
-        fade.setEasingCurve(QEasingCurve.InOutCubic)
-        group = QParallelAnimationGroup(overlay)
-        group.addAnimation(fade)
+    def cover_opacity(self):
+        """Opacity of the black cover, or None when there is no cover."""
+        if not self.cover or self.overlay is None:
+            return None
+        try:
+            return self.overlay.graphicsEffect().opacity()
+        except (RuntimeError, AttributeError):
+            return None
 
-        def done():
-            overlay.deleteLater()
-            self.overlay = None
-            self.group = None
-            if callback:
-                callback()
-
-        group.finished.connect(done)
-        self.overlay = overlay
-        self.group = group
-        group.start()
-
-    def closing(self, black_reached):
-        # Fade only to black here. Presenter owns the five-second black hold and
-        # session lifetime, keeping visual animation separate from control state.
+    def hold_black(self):
+        """Cover the view with black at once (before the first frame)."""
         self.stop()
         overlay = QLabel(self.view)
+        overlay.setObjectName("fadeCover")
+        overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         overlay.setStyleSheet("background:#000;border:0")
         overlay.setGeometry(self.view.rect())
+        effect = QGraphicsOpacityEffect(overlay)
+        effect.setOpacity(1.0)
+        overlay.setGraphicsEffect(effect)
         overlay.show()
         overlay.raise_()
-        effect = QGraphicsOpacityEffect(overlay)
-        overlay.setGraphicsEffect(effect)
-        effect.setOpacity(0.0)
-        fade = QPropertyAnimation(effect, b"opacity", overlay)
-        fade.setDuration(1750)
-        fade.setStartValue(0.0)
-        fade.setEndValue(1.0)
-        fade.setEasingCurve(QEasingCurve.InOutCubic)
-        group = QParallelAnimationGroup(overlay)
-        group.addAnimation(fade)
+        self.overlay = overlay
+        self.cover = True
+
+    def _fade(self, end, ms, finished):
+        start = self.cover_opacity()
+        if start is None:
+            self.hold_black()
+            start = 1.0 - end
+        elif self.group is not None:
+            try:
+                self.group.stop()
+            except RuntimeError:
+                pass
+        overlay = self.overlay
+        effect = overlay.graphicsEffect()
+        effect.setOpacity(start)
+        overlay.raise_()
+        anim = QPropertyAnimation(effect, b"opacity", overlay)
+        # A fade that starts half-way (Esc during the opening) takes half the time.
+        anim.setDuration(max(1, int(ms * abs(end - start))))
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setEasingCurve(QEasingCurve.InOutSine)
+        anim.finished.connect(lambda: finished(overlay))
+        self.group = anim
+        anim.start()
+
+    def opening(self, callback=None):
+        """Fade the black cover (or a new one) out over OPEN_FADE_MS."""
+
+        def done(overlay):
+            if self.overlay is overlay:
+                self.stop()
+            if callback:
+                callback()
+
+        self._fade(0.0, OPEN_FADE_MS, done)
+
+    def closing(self, black_reached=None):
+        # Fade only to black here. Presenter owns the short black hold and the
+        # session lifetime, keeping visual animation separate from control state.
         completed = {"done": False}
 
-        def reached():
+        def reached(_overlay=None):
             if completed["done"]:
                 return
             completed["done"] = True
-            black_reached()
+            if black_reached:
+                black_reached()
 
-        group.finished.connect(reached)
-        self.overlay = overlay
-        self.group = group
-        group.start()
-        QTimer.singleShot(1900, reached)
+        self._fade(1.0, CLOSE_FADE_MS, reached)
+        QTimer.singleShot(CLOSE_FADE_MS + 250, reached)
+
+
+class LiveZoom:
+    """Live Zoom: magnifies a snapshot of a view around a point (Z)."""
+
+    def __init__(self, view):
+        self.view = view
+        self.overlay = None
+        self.anim = None
+        self.zoomed = False
+
+    def toggle(self, pt):
+        # Transforms a snapshot only; deck data and exports remain untouched.
+        if self.zoomed:
+            if self.overlay is not None:
+                ov = self.overlay
+                anim = QPropertyAnimation(ov, b"geometry", ov)
+                anim.setDuration(280)
+                anim.setStartValue(ov.geometry())
+                anim.setEndValue(self.view.rect())
+                anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+                def gone():
+                    ov.deleteLater()
+                    if self.overlay is ov:
+                        self.overlay = None
+
+                anim.finished.connect(gone)
+                self.anim = anim
+                anim.start()
+            self.zoomed = False
+            return
+        pm = self.view.grab()
+        if pm.isNull():
+            return
+        ov = QLabel(self.view)
+        ov.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        ov.setPixmap(pm)
+        ov.setScaledContents(True)
+        ov.setGeometry(self.view.rect())
+        ov.show()
+        ov.raise_()
+        if pt is None or pt.isNull():
+            pt = QPointF(self.view.rect().center())
+        r = self.view.rect()
+        scale = 1.75
+        nw = int(r.width() * scale)
+        nh = int(r.height() * scale)
+        tx = int(r.center().x() - (pt.x() / max(1, r.width())) * nw)
+        ty = int(r.center().y() - (pt.y() / max(1, r.height())) * nh)
+        # Near an edge the magnified slide must still cover the whole view.
+        tx = min(0, max(r.width() - nw, tx))
+        ty = min(0, max(r.height() - nh, ty))
+        anim = QPropertyAnimation(ov, b"geometry", ov)
+        anim.setDuration(420)
+        anim.setStartValue(r)
+        anim.setEndValue(QRectF(tx, ty, nw, nh).toRect())
+        anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self.overlay = ov
+        self.anim = anim
+        self.zoomed = True
+        anim.start()
+
+    def clear(self):
+        if self.overlay is not None:
+            try:
+                self.overlay.deleteLater()
+            except RuntimeError:
+                pass
+            self.overlay = None
+        self.zoomed = False
 
 
 class PresenterFocusOverlay(QWidget):
-    """Audience-only focus system: soft Spotlight, deep Focus Reveal and pinned Focus Trail."""
+    """Audience-only focus system: soft Spotlight, deep Focus Reveal and pinned Focus Trail.
+
+    The presenter's CURRENT preview holds a mirror copy (``mirror``) so the
+    presenter sees the same focus the audience sees.
+    """
+
+    changed = Signal()
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -463,11 +586,24 @@ class PresenterFocusOverlay(QWidget):
         self.setVisible(bool(mode))
         self.raise_()
         self.update()
+        self.changed.emit()
 
     def set_point(self, p, force=False):
         if self.pinned and not force:
             return
         self.point = QPointF(p)
+        self.update()
+        self.changed.emit()
+
+    def mirror(self, mode, point, radius, pinned):
+        """Show a copy of another overlay's state (already mapped to this view)."""
+        self.mode = mode
+        self.point = QPointF(point)
+        self.radius = radius
+        self.pinned = pinned
+        self.setGeometry(self.parentWidget().rect())
+        self.setVisible(bool(mode))
+        self.raise_()
         self.update()
 
     def pin_or_move(self, p):
@@ -478,6 +614,7 @@ class PresenterFocusOverlay(QWidget):
             self.pinned = True
             self.point = target
             self.update()
+            self.changed.emit()
             return True
         start = QPointF(self.point)
         anim = QVariantAnimation(self)
@@ -492,10 +629,12 @@ class PresenterFocusOverlay(QWidget):
 
     def unpin(self):
         self.pinned = False
+        self.changed.emit()
 
     def adjust_radius(self, delta):
         self.radius = max(65, min(420, self.radius + delta))
         self.update()
+        self.changed.emit()
 
     def paintEvent(self, e):
         if not self.mode:
@@ -686,6 +825,88 @@ class PresenterPauseOverlay(QWidget):
         q.end()
 
 
+class PreviewMirror(QObject):
+    """The presenter's CURRENT preview as a small copy of the audience output.
+
+    It repeats the whole-show fades, slide transitions, Spotlight/Focus Reveal
+    and Live Zoom, so a presenter whose audience window is covered (laptop
+    mode) or on another screen sees what the audience sees. The mouse over the
+    preview aims Spotlight, Focus Reveal and Zoom on the audience window.
+    """
+
+    def __init__(self, canvas, audience):
+        super().__init__(canvas)
+        self.canvas = canvas
+        self.audience = audience
+        self.engine = TransitionEngine(canvas)
+        self.focus = PresenterFocusOverlay(canvas)
+        self.zoom = LiveZoom(canvas)
+        canvas.setMouseTracking(True)
+        canvas.installEventFilter(self)
+        audience.focus_overlay.changed.connect(self.sync_focus)
+        audience.mirror = self
+
+    def to_audience(self, p):
+        """Preview point -> audience view point (the same spot on the slide)."""
+        src = self.canvas.slide_rect()
+        dst = self.audience.view.slide_rect()
+        if src.width() < 1 or src.height() < 1:
+            return None
+        nx = min(1.0, max(0.0, (p.x() - src.x()) / src.width()))
+        ny = min(1.0, max(0.0, (p.y() - src.y()) / src.height()))
+        return QPointF(dst.x() + nx * dst.width(), dst.y() + ny * dst.height())
+
+    def from_audience(self, p):
+        src = self.audience.view.slide_rect()
+        dst = self.canvas.slide_rect()
+        if src.width() < 1 or src.height() < 1:
+            return QPointF(dst.center())
+        nx = (p.x() - src.x()) / src.width()
+        ny = (p.y() - src.y()) / src.height()
+        return QPointF(dst.x() + nx * dst.width(), dst.y() + ny * dst.height())
+
+    def scale(self):
+        src = self.audience.view.slide_rect()
+        return self.canvas.slide_rect().width() / max(1.0, src.width())
+
+    def sync_focus(self):
+        o = self.audience.focus_overlay
+        point = self.from_audience(o.point) if not o.point.isNull() else QPointF()
+        self.focus.mirror(o.mode if not o.isHidden() else None, point, o.radius * self.scale(), o.pinned)
+
+    def transition(self, mode):
+        # Called before the preview renders the new slide, so grab() is the old one.
+        if mode == "NONE" or not self.canvas.isVisible():
+            return
+        self.engine.animate(self.canvas.grab(), mode)
+
+    def toggle_zoom(self, audience_point):
+        if not self.zoom.zoomed:
+            self.focus.hide()
+        self.zoom.toggle(self.from_audience(audience_point) if audience_point is not None else None)
+        self.sync_focus()
+
+    def eventFilter(self, obj, e):
+        if obj is self.canvas:
+            t = e.type()
+            if t == QEvent.Type.MouseMove:
+                q = self.to_audience(e.position())
+                if q is not None:
+                    self.audience.aim(q)
+            elif (
+                t == QEvent.Type.MouseButtonPress
+                and e.button() == Qt.MouseButton.LeftButton
+                and self.audience.focus_overlay.mode
+            ):
+                q = self.to_audience(e.position())
+                if q is not None:
+                    self.audience.focus_overlay.pin_or_move(q)
+                return True
+            elif t == QEvent.Type.Resize:
+                self.sync_focus()
+        return False
+
+
 class Audience(QMainWindow):
     keyForward = Signal(int, int, str)
     closeRequested = Signal()
@@ -717,9 +938,10 @@ class Audience(QMainWindow):
         self.setWindowTitle(AUDIENCE_TITLE)
         self._share_flash = None
         self._opening = False
+        self._opening_token = 0
+        self.mirror = None  # PreviewMirror of the presenter view, if any
         self._curtain = None
-        self._zoom_overlay = None
-        self._zoomed = False
+        self.zoom = LiveZoom(self.view)
         self._paused = False
         self._pause_video_was_playing = False
         self._pause_web_audio_muted = None
@@ -822,16 +1044,7 @@ class Audience(QMainWindow):
         self._video_source_key = ""
 
     def _video_rect(self, slide):
-        r = QRectF(self.view.rect())
-        ar = {"16:9": 16 / 9, "16:10": 16 / 10, "4:3": 4 / 3, "A4": 297 / 210}.get(
-            self.data.get("aspect", "16:9"), 16 / 9
-        )
-        if r.width() / max(1, r.height()) > ar:
-            nw = r.height() * ar
-            r = QRectF((self.view.width() - nw) / 2, 0, nw, self.view.height())
-        else:
-            nh = r.width() / ar
-            r = QRectF(0, (self.view.height() - nh) / 2, self.view.width(), nh)
+        r = _aspect_rect(self.view.rect(), self.data.get("aspect", "16:9"))
         m = r.width() * 0.055
         vr = (
             QRectF(r.x() + m, r.y() + r.height() * 0.23, r.width() - 2 * m, r.height() * 0.58)
@@ -919,6 +1132,9 @@ class Audience(QMainWindow):
             if self.blank is None and self.view.isVisible() and mode != "NONE"
             else None
         )
+        if self._opening:
+            # Navigating during the opening fade ends it at once.
+            self._cancel_opening()
         self.clear_presenter_effects()
         self.i = new_i
         self._motion_clock.restart()
@@ -927,6 +1143,8 @@ class Audience(QMainWindow):
         if old_pm is None or old_pm.isNull() or mode == "NONE":
             return
         self.transition_engine.animate(old_pm, mode)
+        if self.mirror is not None:
+            self.mirror.transition(mode)
 
     def set_blank(self, mode=None):
         self.blank = mode
@@ -942,16 +1160,84 @@ class Audience(QMainWindow):
             self.draw()
         self._update_motion_timer()
 
+    def _engines(self):
+        engines = [self.transition_engine]
+        if self.mirror is not None:
+            engines.append(self.mirror.engine)
+        return engines
+
     def begin_opening(self):
+        """Fade in from black once the window is really on screen.
+
+        The black cover is placed at once, before the first frame. The fade
+        itself starts only when the window is exposed plus a short settle time
+        (window manager fullscreen/maximise and compositor map fade), so it is
+        never spent before anyone can see it. A timeout keeps it from waiting
+        forever.
+        """
         self._opening = True
+        self._opening_token += 1
+        token = self._opening_token
         self._motion_clock.restart()
         self.draw()
         self._update_motion_timer()
-        self.transition_engine.opening(self.finish_opening)
+        for engine in self._engines():
+            engine.hold_black()
+        waited = QElapsedTimer()
+        waited.start()
 
-    def finish_opening(self):
+        def poll():
+            if token != self._opening_token or not self._opening:
+                return
+            handle = self.windowHandle()
+            exposed = handle is not None and handle.isExposed() and self.isVisible()
+            if exposed or waited.elapsed() >= OPEN_WAIT_MAX_MS:
+                QTimer.singleShot(OPEN_SETTLE_MS, lambda: self._start_opening_fade(token))
+            else:
+                QTimer.singleShot(25, poll)
+
+        poll()
+
+    def _start_opening_fade(self, token):
+        if token != self._opening_token or not self._opening:
+            return
+        self.transition_engine.opening(lambda: self.finish_opening(token))
+        if self.mirror is not None:
+            self.mirror.engine.opening()
+
+    def finish_opening(self, token=None):
+        if token is not None and token != self._opening_token:
+            return
         self._opening = False
         self.draw()
+
+    def _cancel_opening(self):
+        self._opening_token += 1
+        self._opening = False
+        for engine in self._engines():
+            engine.stop()
+
+    def begin_closing(self, black_reached):
+        """Fade to black (also in the presenter preview); calls black_reached."""
+        if self._opening:
+            # Keep the cover: the closing fade continues from where it is.
+            self._opening_token += 1
+            self._opening = False
+        self.transition_engine.closing(black_reached)
+        if self.mirror is not None:
+            self.mirror.engine.closing()
+
+    def aim(self, p):
+        """Point Spotlight, Focus Reveal and Zoom at p (audience view coordinates)."""
+        self.focus_overlay.set_point(p)
+
+    @property
+    def _zoomed(self):
+        return self.zoom.zoomed
+
+    @property
+    def _zoom_overlay(self):
+        return self.zoom.overlay
 
     def set_focus_mode(self, mode):
         self.focus_overlay.set_mode(None if self.focus_overlay.mode == mode else mode)
@@ -963,59 +1249,23 @@ class Audience(QMainWindow):
         self.focus_overlay.adjust_radius(delta)
 
     def toggle_zoom(self):
-        # Live Zoom transforms a snapshot only; deck data and exports remain untouched.
-        if self._zoomed:
-            if self._zoom_overlay is not None:
-                ov = self._zoom_overlay
-                anim = QPropertyAnimation(ov, b"geometry", ov)
-                anim.setDuration(280)
-                anim.setStartValue(ov.geometry())
-                anim.setEndValue(self.view.rect())
-                anim.setEasingCurve(QEasingCurve.InOutCubic)
-                anim.finished.connect(
-                    lambda: (ov.deleteLater(), setattr(self, "_zoom_overlay", None))
-                )
-                self._zoom_anim = anim
-                anim.start()
-            self._zoomed = False
-            return
-        pm = self.view.grab()
-        if pm.isNull():
-            return
-        ov = QLabel(self.view)
-        ov.setPixmap(pm)
-        ov.setScaledContents(True)
-        ov.setGeometry(self.view.rect())
-        ov.show()
-        ov.raise_()
-        pt = (
-            self.focus_overlay.point
-            if not self.focus_overlay.point.isNull()
-            else QPointF(self.view.rect().center())
-        )
-        r = self.view.rect()
-        scale = 1.75
-        nw = int(r.width() * scale)
-        nh = int(r.height() * scale)
-        tx = int(r.center().x() - (pt.x() / max(1, r.width())) * nw)
-        ty = int(r.center().y() - (pt.y() / max(1, r.height())) * nh)
-        target = QRectF(tx, ty, nw, nh).toRect()
-        anim = QPropertyAnimation(ov, b"geometry", ov)
-        anim.setDuration(420)
-        anim.setStartValue(r)
-        anim.setEndValue(target)
-        anim.setEasingCurve(QEasingCurve.InOutCubic)
-        self._zoom_overlay = ov
-        self._zoom_anim = anim
-        self._zoomed = True
-        anim.start()
+        pt = self.focus_overlay.point if not self.focus_overlay.point.isNull() else None
+        # Zoom magnifies the clean slide; the Spotlight/Focus veil rests while
+        # zoomed (its hole would no longer match the magnified slide).
+        if not self.zoom.zoomed:
+            self.focus_overlay.hide()
+        self.zoom.toggle(pt)
+        if not self.zoom.zoomed:
+            self.focus_overlay.setVisible(bool(self.focus_overlay.mode))
         self.focus_overlay.raise_()
+        if self.mirror is not None:
+            self.mirror.toggle_zoom(pt)
 
     def clear_presenter_effects(self):
-        if self._zoom_overlay is not None:
-            self._zoom_overlay.deleteLater()
-            self._zoom_overlay = None
-        self._zoomed = False
+        self.zoom.clear()
+        if self.mirror is not None:
+            self.mirror.zoom.clear()
+        self.focus_overlay.setVisible(bool(self.focus_overlay.mode))
         self.focus_overlay.unpin()
 
     def _cursor_activity(self):
@@ -1125,7 +1375,7 @@ class Audience(QMainWindow):
             self._video_widget.setGeometry(self._video_rect(self.data["slides"][self.i]))
 
     def keyPressEvent(self, e):
-        self.keyForward.emit(int(e.key()), int(e.modifiers()), e.text())
+        self.keyForward.emit(int(e.key()), _mod_int(e.modifiers()), e.text())
         e.accept()
 
     def mousePressEvent(self, e):
@@ -1328,6 +1578,7 @@ class PresenterBody(QWidget):
                   self.smaller, self.larger, self.notes):
             w.setParent(self)
         self.compact_next = False
+        self.at_end = False  # last slide: NEXT shows a title line, not a slide
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1372,7 +1623,7 @@ class PresenterBody(QWidget):
         avail = top_h - y - label_h
         nw = min(rw, int(avail * 16 / 9))
         nh = int(nw * 9 / 16)
-        self.compact_next = nw < 200 or nh < 100
+        self.compact_next = nw < 200 or nh < 100 or self.at_end
         self.next_label.setGeometry(rx, y, rw, label_h)
         if self.compact_next:
             self.next.hide()
@@ -1511,6 +1762,8 @@ class Presenter(QMainWindow):
         self.talk_stop = None
         self._closing = False
         self._black_hold = False
+        self._closing_fade_started = False
+        self._end_black = False  # faded to black after the last slide
         self._share_checking = False
         self.share_dialog = None
         self.curtain = False
@@ -1542,7 +1795,9 @@ class Presenter(QMainWindow):
         self.audience.create()
         # Own WM_CLASS per window and _NIRUWM_KEEP_MAPPED: NIRUWM keeps the
         # audience window mapped (live in a share) when its workspace is hidden.
-        x11props.set_window_identity(self.audience, "nirupres-audience", "NIRUPRES", True)
+        x11props.set_window_identity(
+            self.audience, "nirupres-audience", "NIRUPRES", True, opaque=True
+        )
         if self.audience.windowHandle():
             self.audience.windowHandle().setScreen(audience_screen)
         if online:
@@ -1586,11 +1841,16 @@ class Presenter(QMainWindow):
             QTimer.singleShot(220, place_stop)
             QTimer.singleShot(900, place_stop)
         self.dual = online or (len(screens) > 1 and presenter_screen != audience_screen)
-        if self.data.get("cinematicOpen", True) and not self.data.get("reduceMotion", False):
-            if not share_check:
-                self.audience.begin_opening()
+        self.mirror = None
+        open_now = (
+            self.data.get("cinematicOpen", True)
+            and not self.data.get("reduceMotion", False)
+            and not share_check
+        )
         self.presenting_mode.start(os.getpid())
         if not self.dual:
+            if open_now:
+                self.audience.begin_opening()
             # Single-display mode has no visible Presenter window. The Audience must
             # therefore be the explicit keyboard owner after Wayland has mapped the
             # fullscreen surface. Installing shortcuts on a hidden Presenter caused
@@ -1636,6 +1896,10 @@ class Presenter(QMainWindow):
         self.position_label = self.body.position
         self.notes = self.body.notes
         self.notes_label = self.body.notes_label
+        # 2.4: the CURRENT preview mirrors fades, transitions and focus effects,
+        # and the mouse over it aims Spotlight/Focus Reveal/Zoom on the audience.
+        self.mirror = PreviewMirror(self.now, self.audience)
+        self.now.setToolTip("Point here to aim Spotlight (S), Focus Reveal (F) and Zoom (Z)")
         root.addWidget(self.body, 1)
         controls = QHBoxLayout()
         prev = QPushButton("‹  PREVIOUS")
@@ -1669,7 +1933,7 @@ class Presenter(QMainWindow):
         self.share_watch.timeout.connect(self.refresh_audience_state)
         self.share_watch.start()
         self.create()
-        x11props.set_window_identity(self, "nirupres-presenter", "NIRUPRES")
+        x11props.set_window_identity(self, "nirupres-presenter", "NIRUPRES", opaque=True)
         if self.windowHandle():
             self.windowHandle().setScreen(presenter_screen)
         if online:
@@ -1697,6 +1961,8 @@ class Presenter(QMainWindow):
             sc.activated.connect(lambda d=delta: self.notes_zoom(d))
             self._shortcuts.append(sc)
         QTimer.singleShot(180, self.claim_focus)
+        if open_now:
+            self.audience.begin_opening()
         if share_check:
             self._share_checking = True
             QTimer.singleShot(260, self.open_share_check)
@@ -1751,6 +2017,12 @@ class Presenter(QMainWindow):
         f.setPixelSize(self.notes_px)
         self.notes.setFont(f)
         self.notes.document().setDefaultFont(f)
+        # The application style sheet sets font-size on every QWidget and won
+        # over setFont() when the window was first polished: notes started at
+        # 13 px until A-/A+ was pressed. A widget rule is more specific.
+        self.notes.setStyleSheet(
+            f'QTextEdit#presenterNotes{{font-family:"Noto Sans";font-size:{self.notes_px}px}}'
+        )
 
     def _default_state(self):
         if self.online:
@@ -1764,6 +2036,10 @@ class Presenter(QMainWindow):
         warn = viewable is False or not self.audience.isVisible()
         if warn:
             text = "⚠  AUDIENCE WINDOW HIDDEN · a shared window is frozen · show it again"
+        elif self._black_hold or self._closing_fade_started:
+            text = "ENDING · press Esc again to close now"
+        elif self._end_black:
+            text = "END OF SLIDES · audience sees black · Next or Esc ends · Previous goes back"
         elif self.paused:
             text = "PAUSED · AUDIENCE DIMMED"
         elif self.curtain:
@@ -1927,6 +2203,9 @@ class Presenter(QMainWindow):
         # position_label exists only in Presenter View/Online. In single-display
         # mode QWidget.pos is a built-in method, so using self.pos as a label
         # caused every keyboard navigation redraw to raise AttributeError.
+        # The audience goes first: the preview mirror grabs the old slide for
+        # its transition before the CURRENT preview renders the new one.
+        self.audience.set_index(self.i)
         if self.dual:
             self.position_label.setText(f"{self.i+1} / {total}")
             self.now.render(
@@ -1946,8 +2225,15 @@ class Presenter(QMainWindow):
             self.notes.setPlainText(notes)
             self.notes.setPlaceholderText("No speaker notes for this slide.")
             ni = self._next_visible(self.i, 1)
+            if self.body.at_end != (ni == self.i):
+                self.body.at_end = ni == self.i
+                self.body.relayout()
             if ni == self.i:
-                self.body.next_title.setText("End of presentation")
+                self.body.next_title.setText(
+                    "End of presentation · Next fades to black"
+                    if self._cinematic_close()
+                    else "End of presentation"
+                )
             else:
                 nxt_s = self.data["slides"][ni]
                 self.body.next_title.setText(
@@ -1966,12 +2252,30 @@ class Presenter(QMainWindow):
                 self.data.get("footerAlign", "LEFT"),
                 self.data.get("footerSize", "MEDIUM"),
             )
-        self.audience.set_index(self.i)
         if getattr(self, "_marker_slide", None) != self.i:
             self._marker_slide = self.i
             self.slideChanged.emit(self.i)
 
     def navigate(self, d):
+        if self._closing_fade_started or self._closing:
+            return  # ending: the slides stay black; Esc again closes at once
+        if self._end_black:
+            if d == 1:
+                self._finish_session()
+                return
+            # Back from the black end: fade the slides in again.
+            self._end_black = False
+            for engine in self.audience._engines():
+                engine.opening()
+            self.refresh_audience_state()
+            if d == -1:
+                return
+        elif d == 1 and self._next_visible(self.i, 1) == self.i and self._cinematic_close():
+            # Next on the last slide fades to black; Next or Esc again ends.
+            self._end_black = True
+            self.audience.begin_closing(None)
+            self.refresh_audience_state()
+            return
         if d == -999:
             self.i = self._nearest_visible(0, 1)
         elif d == 999:
@@ -2136,24 +2440,29 @@ class Presenter(QMainWindow):
                     Qt.Key_End,
                 )
                 if key in presentation_keys or Qt.Key_0 <= key <= Qt.Key_9:
-                    self.handle_key(key, int(event.modifiers()), event.text())
+                    self.handle_key(key, _mod_int(event.modifiers()), event.text())
                     return True
         return super().eventFilter(watched, event)
 
     def keyPressEvent(self, e):
-        self.handle_key(int(e.key()), int(e.modifiers()), e.text())
+        self.handle_key(int(e.key()), _mod_int(e.modifiers()), e.text())
         e.accept()
 
+    def _cinematic_close(self):
+        return self.data.get("cinematicClose", True) and not self.data.get("reduceMotion", False)
+
     def close_session(self):
-        # A second Escape always means "close now", including during fade/black hold.
-        if self._black_hold or getattr(self, "_closing_fade_started", False):
+        # A second Escape always means "close now", including during fade/black
+        # hold and on the black end after the last slide.
+        if self._black_hold or self._closing_fade_started or self._end_black:
             self._finish_session()
             return
         if self._closing:
             return
-        if self.data.get("cinematicClose", True) and not self.data.get("reduceMotion", False):
+        if self._cinematic_close():
             self._closing_fade_started = True
-            self.audience.transition_engine.closing(self._begin_black_hold)
+            self.audience.begin_closing(self._begin_black_hold)
+            self.refresh_audience_state()
             return
         self._finish_session()
 
@@ -2161,8 +2470,8 @@ class Presenter(QMainWindow):
         if self._closing:
             return
         self._black_hold = True
-        # Keep audience black for five seconds; presenter may press Esc again to skip.
-        QTimer.singleShot(5000, self._finish_session)
+        # A short black hold so the end reads as an end; Esc again skips it.
+        QTimer.singleShot(BLACK_HOLD_MS, self._finish_session)
 
     def _finish_session(self):
         if self._closing:
