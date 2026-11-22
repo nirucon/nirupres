@@ -10,6 +10,7 @@ struct Entry {
     file: String,
     index: u32,
     families: Vec<String>,
+    lower: Vec<String>,
     /// OpenType weight range (100..900); equal ends for a static face.
     wmin: f32,
     wmax: f32,
@@ -60,6 +61,7 @@ pub struct FontDb {
     loaded: HashMap<(usize, i32, bool), Arc<Face>>,
     resolved: HashMap<(String, u16, bool), Arc<Face>>,
     substitutes: HashMap<String, Option<String>>,
+    fallback_cache: HashMap<(u16, bool), Vec<Arc<Face>>>,
     next_id: u32,
     refreshed: bool,
 }
@@ -172,10 +174,12 @@ fn parse_list(text: &str) -> Vec<Entry> {
         } else {
             (w0 - 100.0).abs().min((w1 - 100.0).abs())
         };
+        let lower = families.iter().map(|f| f.to_lowercase()).collect();
         out.push(Entry {
             file,
             index,
             families,
+            lower,
             wmin: fc_to_ot(a),
             wmax: fc_to_ot(b),
             italic: slant >= 100.0,
@@ -202,6 +206,7 @@ fn run_fc_list() -> String {
 
 impl FontDb {
     fn load() -> Self {
+        crate::trace("fontdb start");
         let st = stamp();
         let path = cache_path();
         let cached = std::fs::read_to_string(&path).ok().and_then(|t| {
@@ -224,7 +229,9 @@ impl FontDb {
                 (t, true)
             }
         };
+        crate::trace("fontdb text");
         let mut entries = parse_list(&text);
+        crate::trace("fontdb parsed");
         if entries.is_empty() {
             entries = fallback_entries();
         }
@@ -233,6 +240,7 @@ impl FontDb {
             loaded: HashMap::new(),
             resolved: HashMap::new(),
             substitutes: HashMap::new(),
+            fallback_cache: HashMap::new(),
             next_id: 1,
             refreshed,
         }
@@ -253,12 +261,7 @@ impl FontDb {
     fn candidates(&self, family: &str) -> Vec<usize> {
         let fl = family.to_lowercase();
         (0..self.entries.len())
-            .filter(|&i| {
-                self.entries[i]
-                    .families
-                    .iter()
-                    .any(|f| f.to_lowercase() == fl)
-            })
+            .filter(|&i| self.entries[i].lower.iter().any(|f| *f == fl))
             .collect()
     }
 
@@ -342,6 +345,7 @@ impl FontDb {
             self.resolved.insert(key, f.clone());
             return Some(f.clone());
         }
+        crate::trace("face load start");
         let data = map_file(&e.file)?;
         let mut ttf = ttf_parser::Face::parse(data, e.index).ok()?;
         let mut rb = rustybuzz::Face::from_slice(data, e.index)?;
@@ -365,6 +369,7 @@ impl FontDb {
             wght,
         });
         self.next_id += 1;
+        crate::trace(&format!("face loaded {} {}", e.file, weight));
         self.loaded.insert(lkey, face.clone());
         self.resolved.insert(key, face.clone());
         Some(face)
@@ -372,6 +377,9 @@ impl FontDb {
 
     /// Faces tried, in order, for a character the primary face lacks.
     pub fn fallbacks(&mut self, weight: u16, italic: bool) -> Vec<Arc<Face>> {
+        if let Some(v) = self.fallback_cache.get(&(weight, italic)) {
+            return v.clone();
+        }
         let mut v = Vec::new();
         for fam in [
             "Noto Sans",
@@ -392,6 +400,7 @@ impl FontDb {
                 }
             }
         }
+        self.fallback_cache.insert((weight, italic), v.clone());
         v
     }
 }
@@ -413,6 +422,7 @@ fn fallback_entries() -> Vec<Entry> {
                 file: file.into(),
                 index: 0,
                 families: vec![fam.into()],
+                lower: vec![fam.to_lowercase()],
                 wmin: w,
                 wmax: w,
                 italic: it,
@@ -496,11 +506,37 @@ pub struct ShapedGlyph {
     pub cluster: usize,
 }
 
+type ShapeKey = (u32, u32, u16, bool, Vec<char>);
+
+thread_local! {
+    static SHAPES: std::cell::RefCell<HashMap<ShapeKey, Vec<ShapedGlyph>>> = std::cell::RefCell::new(HashMap::new());
+}
+
 /// Shape `text` (chars) with `primary`, falling back per character.
+/// Short texts (labels, lines) are cached.
 pub fn shape(text: &[char], primary: &Arc<Face>, px: f32, weight: u16, italic: bool) -> Vec<ShapedGlyph> {
     if text.is_empty() {
         return Vec::new();
     }
+    if text.len() > 240 {
+        return shape_uncached(text, primary, px, weight, italic);
+    }
+    let key: ShapeKey = (primary.id, px.to_bits(), weight, italic, text.to_vec());
+    if let Some(v) = SHAPES.with(|c| c.borrow().get(&key).cloned()) {
+        return v;
+    }
+    let v = shape_uncached(text, primary, px, weight, italic);
+    SHAPES.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() > 6000 {
+            c.clear();
+        }
+        c.insert(key, v.clone());
+    });
+    v
+}
+
+fn shape_uncached(text: &[char], primary: &Arc<Face>, px: f32, weight: u16, italic: bool) -> Vec<ShapedGlyph> {
     // Split into runs of one face each.
     let mut runs: Vec<(usize, usize, Arc<Face>)> = Vec::new();
     let mut fallbacks: Option<Vec<Arc<Face>>> = None;

@@ -66,10 +66,11 @@ pub fn with_ext(p: &Path, ext: &str) -> PathBuf {
 /// in 2.x), letterboxed on the deck background.
 pub fn export_pdf(data: &Obj, path: &Path) -> Result<PathBuf, String> {
     let path = with_ext(path, ".pdf");
-    let (wpt, hpt) = (841.889_76_f32, 595.275_6_f32);
-    // QPdfWriter at 144 dpi: the page is 1684 x 1191 device pixels.
+    // A4 landscape in whole points, as QPdfWriter writes it.
+    let (wpt, hpt) = (842.0_f32, 595.0_f32);
+    // QPdfWriter at 144 dpi: the page is 1684 x 1190 device pixels.
     let scale = 72.0 / 144.0;
-    let (pw, ph) = ((wpt / scale).round(), (hpt / scale).round());
+    let (pw, ph) = (wpt / scale, hpt / scale);
     let d = Deck(data);
     let ar = aspect_ratio(&d.aspect()) as f32;
     let r = if pw / ph > ar {
