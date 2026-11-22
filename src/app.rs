@@ -487,7 +487,10 @@ impl App {
                 self.ed.presenting = true;
                 self.x.unmap(self.ed.win);
             }
-            Err(e) => crate::dialogs::message(&mut self.ed, "Present", &e.to_string()),
+            Err(e) => {
+                eprintln!("nirupres: could not present: {e}");
+                crate::dialogs::message(&mut self.ed, "Present", &e.to_string())
+            }
         }
     }
 

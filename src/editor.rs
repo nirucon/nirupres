@@ -4082,6 +4082,10 @@ impl Editor {
             };
             match choice.as_deref() {
                 None => {
+                    eprintln!(
+                        "nirupres: one screen found ({}), asking how to present",
+                        mons.len()
+                    );
                     dialogs::open(
                         self,
                         Kind::OneScreen {
