@@ -3067,8 +3067,10 @@ impl Editor {
             (true, false, false, 0x6b) | (true, false, false, 0x4b) => Some(Act::Palette),
             (true, true, false, 0x65) | (true, true, false, 0x45) => Some(Act::ExportPdf),
             (true, false, true, 0x65) | (true, false, true, 0x45) => Some(Act::ExportPng),
-            (false, false, false, K_F5) => Some(Act::Present),
-            (false, true, false, K_F5) => Some(Act::PresentStart),
+            // Alt is ignored on F5: some keymaps (xdotool on a bare X
+            // server) deliver it with Alt held, and Alt+F5 means nothing here.
+            (false, false, _, K_F5) => Some(Act::Present),
+            (false, true, _, K_F5) => Some(Act::PresentStart),
             (false, false, false, K_TAB) => Some(Act::Focus),
             (false, false, true, K_UP) | (true, false, false, K_UP) => Some(Act::MoveUp),
             (false, false, true, K_DOWN) | (true, false, false, K_DOWN) => Some(Act::MoveDown),
