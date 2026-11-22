@@ -106,14 +106,16 @@ grep -q 'layout: SPLIT' "$SB/out.md" && grep -q '# Spring garden' "$SB/out.md" |
 echo "exports ok"
 
 # Present on two screens: audience and presenter with their identities.
-# Any dialog still open after the exports is closed first.
-k Escape
+# Keyboard focus may be left on nothing when the export dialogs close (no
+# window manager here): give it back to the editor before presenting.
+ED=$(xdotool search --classname '^nirupres$' | head -1)
+xdotool windowfocus --sync "$ED" 2>/dev/null || xdotool windowfocus "$ED"
 k F5
 # A slower machine (CI) may need a few seconds for both windows.
 AU= PR= n=0
 while [ $n -lt 40 ] && { [ -z "$AU" ] || [ -z "$PR" ]; }; do
   sleep 0.2; n=$((n + 1))
-  [ $n = 15 ] && k F5
+  if [ $n = 15 ]; then xdotool windowfocus "$ED"; k F5; fi
   AU=$(xdotool search --classname '^nirupres-audience$' | head -1)
   PR=$(xdotool search --classname '^nirupres-presenter$' | head -1)
 done
