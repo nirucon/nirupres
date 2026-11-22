@@ -100,9 +100,13 @@ echo "exports ok"
 
 # Present on two screens: audience and presenter with their identities.
 k F5
-sleep 1.5
-AU=$(xdotool search --classname '^nirupres-audience$' | head -1)
-PR=$(xdotool search --classname '^nirupres-presenter$' | head -1)
+# A slower machine (CI) may need a few seconds for both windows.
+AU= PR= n=0
+while [ $n -lt 40 ] && { [ -z "$AU" ] || [ -z "$PR" ]; }; do
+  sleep 0.2; n=$((n + 1))
+  AU=$(xdotool search --classname '^nirupres-audience$' | head -1)
+  PR=$(xdotool search --classname '^nirupres-presenter$' | head -1)
+done
 [ -n "$AU" ] && [ -n "$PR" ] || fail "presentation windows"
 xprop -id "$AU" _NIRUWM_KEEP_MAPPED | grep -q '= 1' || fail "_NIRUWM_KEEP_MAPPED"
 xprop -id "$AU" WM_NAME | grep -q 'AUDIENCE' || fail "audience title"
