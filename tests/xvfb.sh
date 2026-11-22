@@ -16,7 +16,14 @@ Xvfb "$D" -screen 0 3840x1080x24 -nolisten tcp >/dev/null 2>&1 &
 PIDS="$PIDS $!"
 export DISPLAY=$D
 sleep 1
-fail() { echo "FAIL: $*" >&2; [ -f "$SB/err" ] && tail -5 "$SB/err" >&2; exit 1; }
+fail() {
+  echo "FAIL: $*" >&2
+  [ -f "$SB/err" ] && tail -20 "$SB/err" >&2
+  for w in $(xdotool search --name . 2>/dev/null); do
+    printf 'window %s: %s\n' "$w" "$(xprop -id "$w" WM_CLASS WM_NAME 2>/dev/null | tr '\n' ' ')" >&2
+  done
+  exit 1
+}
 k() { xdotool key --delay 60 "$@"; sleep 0.5; }
 type_() { xdotool type --delay 30 "$1"; sleep 0.4; }
 
