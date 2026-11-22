@@ -42,11 +42,17 @@ impl App {
         let timing = std::env::var_os("NIRUPRES_TIMING").is_some();
         let x = X::open()?;
         if timing {
-            eprintln!("nirupres: X open {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
+            eprintln!(
+                "nirupres: X open {:.1} ms",
+                started.elapsed().as_secs_f64() * 1000.0
+            );
         }
         let ed = Editor::new(&x)?;
         if timing {
-            eprintln!("nirupres: editor ready {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
+            eprintln!(
+                "nirupres: editor ready {:.1} ms",
+                started.elapsed().as_secs_f64() * 1000.0
+            );
         }
         let inotify = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
         let mut app = Self {
@@ -75,7 +81,11 @@ impl App {
             return;
         }
         let dir = crate::chrome::watch_dir();
-        let target = if dir.is_dir() { dir } else { crate::chrome::config_home() };
+        let target = if dir.is_dir() {
+            dir
+        } else {
+            crate::chrome::config_home()
+        };
         if let Ok(c) = std::ffi::CString::new(target.to_string_lossy().as_bytes()) {
             unsafe {
                 libc::inotify_add_watch(
@@ -90,7 +100,13 @@ impl App {
     fn drain_inotify(&mut self) {
         let mut buf = [0u8; 4096];
         loop {
-            let n = unsafe { libc::read(self.inotify, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+            let n = unsafe {
+                libc::read(
+                    self.inotify,
+                    buf.as_mut_ptr() as *mut libc::c_void,
+                    buf.len(),
+                )
+            };
             if n <= 0 {
                 break;
             }
@@ -111,7 +127,11 @@ impl App {
                     if !matches!(self.start, Some(Start::Editor(_))) {
                         return Err(format!("cannot open {}: {e}", p.display()).into());
                     }
-                    crate::dialogs::message(&mut self.ed, "Open failed", &format!("NIRUPRES could not open this presentation.\n\n{e}"));
+                    crate::dialogs::message(
+                        &mut self.ed,
+                        "Open failed",
+                        &format!("NIRUPRES could not open this presentation.\n\n{e}"),
+                    );
                 }
             }
             _ => {}
@@ -175,9 +195,21 @@ impl App {
                 .map(|t| t.saturating_duration_since(Instant::now()).as_millis() as i32 + 1)
                 .unwrap_or(-1);
             let mut fds = [
-                libc::pollfd { fd: xfd, events: libc::POLLIN, revents: 0 },
-                libc::pollfd { fd: self.wake, events: libc::POLLIN, revents: 0 },
-                libc::pollfd { fd: self.inotify, events: libc::POLLIN, revents: 0 },
+                libc::pollfd {
+                    fd: xfd,
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: self.wake,
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: self.inotify,
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
             ];
             let n = if self.inotify >= 0 { 3 } else { 2 };
             unsafe { libc::poll(fds.as_mut_ptr(), n, timeout) };
@@ -205,13 +237,20 @@ impl App {
             let t0 = Instant::now();
             self.ed.draw();
             if !self.shown_once && std::env::var_os("NIRUPRES_TIMING").is_some() {
-                eprintln!("nirupres: draw {:.1} ms (mapped {})", t0.elapsed().as_secs_f64() * 1000.0, self.ed.mapped);
+                eprintln!(
+                    "nirupres: draw {:.1} ms (mapped {})",
+                    t0.elapsed().as_secs_f64() * 1000.0,
+                    self.ed.mapped
+                );
             }
             self.x.present(self.ed.win, &self.ed.cv)?;
             if !self.shown_once && self.ed.mapped {
                 self.shown_once = true;
                 if std::env::var_os("NIRUPRES_TIMING").is_some() {
-                    eprintln!("nirupres: first frame after {:.1} ms", self.started.elapsed().as_secs_f64() * 1000.0);
+                    eprintln!(
+                        "nirupres: first frame after {:.1} ms",
+                        self.started.elapsed().as_secs_f64() * 1000.0
+                    );
                 }
                 self.after_first_frame();
             }
@@ -238,7 +277,9 @@ impl App {
         }
         match self.start.take() {
             Some(Start::Present(_)) => {
-                let r = self.ed.present(&mut self.x, true, None, None, false, false, None);
+                let r = self
+                    .ed
+                    .present(&mut self.x, true, None, None, false, false, None);
                 self.request(r);
             }
             Some(Start::Talk(_, profile)) => {
@@ -251,7 +292,12 @@ impl App {
 
     fn event(&mut self, ev: Ev) {
         let win = match &ev {
-            Ev::Expose(w) | Ev::Close(w) | Ev::Leave(w) | Ev::Focus(w, _) | Ev::Mapped(w, _) | Ev::DndLeave(w) => Some(*w),
+            Ev::Expose(w)
+            | Ev::Close(w)
+            | Ev::Leave(w)
+            | Ev::Focus(w, _)
+            | Ev::Mapped(w, _)
+            | Ev::DndLeave(w) => Some(*w),
             Ev::Configure(w, ..) | Ev::DndOver(w, ..) | Ev::Drop(w, ..) => Some(*w),
             Ev::Key { win, .. } | Ev::Button { win, .. } | Ev::Motion { win, .. } => Some(*win),
             Ev::Theme => {
@@ -286,6 +332,9 @@ impl App {
         if win == self.ed.win {
             let r = self.ed.event(&mut self.x, &ev);
             self.request(r);
+            if let Some(r) = self.ed.pending.take() {
+                self.request(r);
+            }
         }
     }
 
@@ -310,7 +359,14 @@ impl App {
                 let mons = self.x.monitors();
                 let here = self.ed.editor_monitor(&self.x, &mons);
                 let to = self.ed.cur;
-                match Session::transition_preview(&mut self.x, self.ed.data.clone(), prev, to, self.ed.c.clone(), mons[here].clone()) {
+                match Session::transition_preview(
+                    &mut self.x,
+                    self.ed.data.clone(),
+                    prev,
+                    to,
+                    self.ed.c.clone(),
+                    mons[here].clone(),
+                ) {
                     Ok(s) => self.preview = Some(s),
                     Err(e) => crate::dialogs::message(&mut self.ed, "Preview", &e.to_string()),
                 }
@@ -360,7 +416,9 @@ impl App {
             Poll::Waiting => self.talk_poll_at = Some(Instant::now() + Duration::from_millis(150)),
             Poll::Started(rec) => {
                 self.talk_poll_at = None;
-                let r = self.ed.present(&mut self.x, true, None, None, false, true, None);
+                let r = self
+                    .ed
+                    .present(&mut self.x, true, None, None, false, true, None);
                 match r {
                     Request::Present(req) => {
                         self.present(req);
@@ -368,7 +426,11 @@ impl App {
                             if let Some(t) = self.talk.take() {
                                 t.abort();
                             }
-                            crate::dialogs::message(&mut self.ed, "Talk mode", "The presentation could not start; recording was stopped.");
+                            crate::dialogs::message(
+                                &mut self.ed,
+                                "Talk mode",
+                                "The presentation could not start; recording was stopped.",
+                            );
                             return;
                         }
                         if let (Some(s), Some(t)) = (self.session.as_mut(), self.talk.as_mut()) {
@@ -381,7 +443,11 @@ impl App {
                         if let Some(t) = self.talk.take() {
                             t.abort();
                         }
-                        crate::dialogs::message(&mut self.ed, "Talk mode", "The presentation could not start; recording was stopped.");
+                        crate::dialogs::message(
+                            &mut self.ed,
+                            "Talk mode",
+                            "The presentation could not start; recording was stopped.",
+                        );
                     }
                 }
             }
@@ -431,7 +497,8 @@ impl App {
         self.x.map(self.ed.win);
         self.x.raise_focus(self.ed.win);
         self.ed.dirty_draw = true;
-        self.x.shrink_shm((self.ed.cv.w * self.ed.cv.h * 4) as usize);
+        self.x
+            .shrink_shm((self.ed.cv.w * self.ed.cv.h * 4) as usize);
         if let Some(t) = self.talk.take() {
             self.ed.set_status("Finishing the Talk recording…", 30000);
             let (tx, rx) = mpsc::channel();

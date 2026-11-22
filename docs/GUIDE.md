@@ -11,8 +11,10 @@ appearance. This never changes slide themes, audience output or PDF/PPTX exports
 a deck must look the same on every machine.
 
 - **Follow NIRUX** is enabled by default when NIRUX is detected.
-- The active theme comes from `niructl theme-catalog --json`; optional
-  `~/.config/niruwm/appearance.toml` overrides are applied.
+- The active theme comes from `_NIRUWM_THEME` on the root window (it changes
+  live) or `~/.config/niruwm/config.toml`, user themes from
+  `~/.config/niruwm/themes`; optional `~/.config/niruwm/appearance.toml`
+  overrides are applied.
 - Toggle **NIRUX** in the toolbar or use the command palette. The choice is
   persisted. Without NIRUX, the original monochrome Noir chrome is used.
 - `nirupres --check-config` reports the effective source and data root.
@@ -36,12 +38,14 @@ Technical details:
   Disturb was off before. The fallback state is kept in
   `~/.local/share/nirupres/presenting.json` and repaired on the next start
   after a crash. `NIRUPRES_NIRUCTL=/path/to/niructl` overrides the binary and
-  `NIRUPRES_NIRUCTL=none` disables it (the release gate does this).
-- Text fitting: every slide text is laid out with QTextLayout at a pixel size,
-  shrunk to its layout minimum, then cut with an ellipsis inside its box.
-  `tests/template_fit.py` renders every layout with short, normal, long and very
-  long text and fails on any overflow (`python3 tests/template_fit.py --out DIR`
-  writes the PNGs).
+  `NIRUPRES_NIRUCTL=none` disables it (the tests do this).
+- Text fitting: every slide text is laid out at a pixel size the way Qt's
+  QTextLayout did it in 2.x (HarfBuzz shaping, the same metrics and line
+  breaking), shrunk to its layout minimum, then cut with an ellipsis inside its
+  box. `nirupres --self-test-fit [DIR]` renders every layout with short,
+  normal, long and very long text and fails on any overflow (DIR gets the PNGs).
+- Video: local files and web links play in the audience window through mpv
+  (embedded with `--wid`); without mpv the poster frame is shown.
 
 ## Talk mode
 
@@ -68,8 +72,8 @@ Autosave, recent files and preferences live under the XDG data root, normally
 `~/.local/share/nirupres` (`autosave.json`, `recent.json`, `display.json`,
 `file-workflow.json`, `profile.json`, `ui.json`). Your `.nirupres` decks live
 wherever you save them. The installer also registers the
-`application/x-nirupres` MIME type, a desktop entry and an icon, and it
-validates the staged release with the release gate before replacing anything.
+`application/x-nirupres` MIME type, a desktop entry and an icon, and checks
+the SHA-256 of the binary it downloads.
 
 ## Organization profiles
 

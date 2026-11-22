@@ -269,7 +269,14 @@ impl Writer {
         })
     }
 
-    fn header(&mut self, name: &str, method: u16, crc: u32, csize: u64, size: u64) -> Result<(), String> {
+    fn header(
+        &mut self,
+        name: &str,
+        method: u16,
+        crc: u32,
+        csize: u64,
+        size: u64,
+    ) -> Result<(), String> {
         if csize > 0xFFFF_FFF0 || size > 0xFFFF_FFF0 {
             return Err(format!("{name} is too large for a package"));
         }

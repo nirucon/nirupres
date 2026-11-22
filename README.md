@@ -11,7 +11,10 @@ Minimal, keyboard-oriented presentation studio with presenter view, PDF/PPTX exp
 NIRUPRES is the app I make and give presentations with. Decks are built from
 a fixed set of strong layouts and themes, so they look consistent without
 fiddling, and every deck is a single `.nirupres` file with its images inside.
-It is written in Python with PySide6 (Qt 6).
+Since 3.0 it is written in Rust: one static binary that draws its own
+windows on X11 (x11rb and its own canvas, no GUI toolkit). It starts in about
+20 ms and uses about 20 MB of memory, where the 2.x Python/Qt version needed
+about half a second and 100 MB.
 
 It is a NIRU app first and a NIRUX extra second. The editor chrome can follow
 the active NIRUX theme, but slide themes never do: a deck must look the same
@@ -49,16 +52,17 @@ example on Arch/Omarchy with Wayland.
 - Verified saves (the old file is replaced only after the new one checks out)
   and an autosave recovery file for unsaved decks.
 - **Follow NIRUX** editor chrome, on by default when NIRUX is detected.
+- Video slides play local files and YouTube or Vimeo links in the audience
+  window through mpv (`Space` plays and pauses).
 
 ## Requirements
 
-- Linux with Python 3 and `venv` support (on Debian: `python3-venv`).
-- Network access on first install: the installer creates a private virtual
-  environment and installs `PySide6` (with Multimedia and WebEngine),
-  `python-pptx` and `packaging` from PyPI, as listed in
-  [requirements.txt](requirements.txt). No system packages are installed.
-- Optional: NIRUCLIP for Talk mode, and NIRUX (`niructl`) for the NIRUX
-  editor chrome.
+- Linux with X11 (NIRUWM, any X11 window manager, or XWayland). The release
+  binary is static and needs no libraries.
+- Fonts: Noto Sans and Noto Sans Mono (the slide themes use them); fontconfig
+  (`fc-list`) to find them.
+- Optional: `mpv` (and `yt-dlp` for web links) for video slides, NIRUCLIP
+  and `ffprobe` for Talk mode, and NIRUX (`niructl`) for presenting mode.
 
 ## Installation
 
@@ -76,27 +80,26 @@ project's own `install.sh`.
 
 ### Standalone
 
-Extract the release ZIP (or clone the repository) and run:
+From a checkout or the release files:
 
 ```sh
-./install.sh
+./install.sh            # downloads the static binary of this version and checks its SHA-256
+./install.sh --build    # or build it here with cargo
 nirupres
 ```
 
-The installer works in six steps: it creates or reuses the virtual environment
-in `~/.local/share/nirupres/.venv`, checks or repairs the dependencies, stages
-the release and runs the offscreen release gate on it, takes a rollback
-snapshot of the installed code, installs, and verifies the result (release
-gate again, launcher from an unrelated directory, `--version`). If any step
-fails, the previous code is restored. User data in `~/.local/share/nirupres`
-is never part of the release and is preserved.
+The installer puts `nirupres` in `~/.local/bin`, adds the desktop entry, the
+icon and the `application/x-nirupres` MIME type. It replaces a 2.x (Python)
+installation cleanly: the old code, launcher and virtual environment are
+removed, and your preferences, recent files and autosave in
+`~/.local/share/nirupres` stay. Decks are not touched; they open unchanged.
 
 Upgrade notes per version are in [UPGRADE.md](UPGRADE.md).
 
 ## Usage
 
 ```sh
-nirupres                                 # the editor
+nirupres [deck.nirupres]                 # the editor (opens the deck)
 nirupres --present deck.nirupres         # present from the beginning
 nirupres --talk deck.nirupres [PROFILE]  # present and record; PROFILE: screen-mic (default), screen-camera, camera-mic
 nirupres --export-pdf deck.nirupres [out.pdf]
@@ -198,7 +201,8 @@ NIRUPRES has no configuration file to edit; choices are made in the app and
 stored as small JSON files in the data root:
 
 - **Follow NIRUX** chrome: toggle **NIRUX** in the toolbar or use the command
-  palette. The theme is read from `niructl theme-catalog --json`, with
+  palette. The theme is the one NIRUWM publishes on the root window
+  (`_NIRUWM_THEME`, live), with user themes from `~/.config/niruwm/themes` and
   overrides from `~/.config/niruwm/appearance.toml`. Without NIRUX the
   original monochrome Noir chrome is used.
 - **Profile:** **New → Profile** or `Ctrl+K` → "Profile". It only affects new
@@ -215,8 +219,8 @@ Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.
 
 | Path | Purpose |
 |---|---|
-| `~/.local/bin/nirupres` | Launcher |
-| `~/.local/share/nirupres/nirupres/`, `run.sh`, `.venv/` | Installed code and its virtual environment |
+| `~/.local/bin/nirupres` | The program (one static binary) |
+| `~/.cache/nirupres/fonts-v2` | The font list from fontconfig (rebuilt when fonts change) |
 | `~/.local/share/nirupres/autosave.json` | Recovery file for an unsaved deck (removed on save, open or normal close) |
 | `~/.local/share/nirupres/recent.json`, `display.json`, `file-workflow.json`, `ui.json` | Recent files, display, file-dialog and inspector preferences |
 | `~/.local/share/nirupres/profile.json` | Organization profile |
@@ -229,9 +233,8 @@ Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.
 
 ## Troubleshooting
 
-- **"Python environment is missing. Re-run install.sh."** The virtual
-  environment in `~/.local/share/nirupres/.venv` is gone or broken; run
-  `./install.sh` again. It does not touch your data.
+- **Text looks different from 2.x.** Install Noto Sans and Noto Sans Mono;
+  NIRUPRES uses the same fonts Qt found through fontconfig.
 - **The inspector layout is in a bad state.** Delete
   `~/.local/share/nirupres/ui.json` to restore the default inspector layout.
 - **Talk mode does not start.** NIRUCLIP must be installed and not already
@@ -261,40 +264,41 @@ saved them and are not affected.
 
 ## Building from source
 
-There is nothing to compile. The release gate is an offscreen Qt regression
-suite with private XDG directories, so it never touches your real data:
-
 ```sh
-scripts/test.sh            # creates/reuses ./.venv from requirements.txt
-scripts/test.sh --system   # use the system python3 and PySide6
-```
-
-or by hand:
-
-```sh
-python3 -m compileall -q nirupres tests
-QT_QPA_PLATFORM=offscreen PYTHONPATH=. python3 tests/release_gate.py
+cargo build --release
+cargo test
+./target/release/nirupres --self-test-fit       # every layout, four text lengths, three sizes
+sh tests/xvfb.sh target/release/nirupres        # end-to-end in a private Xvfb
 ```
 
 Source layout:
 
-- `nirupres/foundation.py`: project model, themes, assets, renderer
-- `nirupres/presentation.py`: audience/presenter windows and transitions
-- `nirupres/editor.py`: slide editing dialogs and widgets
-- `nirupres/markdown_io.py`: Markdown interchange and AI brief
-- `nirupres/main.py`: application shell and command line
-- `nirupres/ui_toolbar.py`, `ui_inspector.py`, `ui_slides.py`: editor window parts
-- `nirupres/profile.py`: organization profiles; `nirupres/talk.py`: Talk mode;
-  `nirupres/theme.py`: NIRUX chrome
-- `tests/release_gate.py`: the release gate (`tests/gate_22.py` holds the 2.2 checks)
+- `src/model.rs`, `src/package.rs`, `src/zip.rs`: project format 9 and the `.nirupres` package
+- `src/render.rs`, `src/textfit.rs`, `src/fonts.rs`, `src/images.rs`: the slide renderer
+- `src/pdf.rs`, `src/pptx.rs`, `src/export.rs`: PDF, PowerPoint and PNG export
+- `src/markdown.rs`: NIRUPRES Markdown and the AI brief
+- `src/editor.rs`, `src/dialogs.rs`, `src/ui.rs`: the editor
+- `src/present.rs`, `src/presenting.rs`, `src/video.rs`, `src/talk.rs`: presenting, NIRUX presenting mode, video and Talk mode
+- `src/x.rs`, `src/canvas.rs`, `src/app.rs`: X11, the canvas and the event loop
 
-Project format 9 and Markdown format 2 are unchanged since 2.0; decks saved by
-2.2 still open in 2.1. See [CHANGELOG.md](CHANGELOG.md),
-[CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+Project format 9 and Markdown format 2 are unchanged since 2.0. See
+[CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md) and
+[SECURITY.md](SECURITY.md).
+
+### Performance (3.0.0 against 2.4.0)
+
+Measured on othala in the same private Xvfb (1920x1080), fresh user data:
+
+| | 2.4.0 (Python, Qt) | 3.0.0 (Rust) |
+|---|---|---|
+| Window shown after start | 325 to 650 ms | 9 to 30 ms |
+| First frame drawn | about 330 ms | 15 to 50 ms |
+| Memory (RSS) | about 100 MB | about 18 to 20 MB |
+| CPU while idle | 0 | 0 |
 
 ## Status, disclaimer and how it's made
 
-**Status: beta.** Editing, presenting, PDF export and Talk mode work and are covered by an offscreen release gate. PowerPoint export is image-based, and dual-screen presenting should be rehearsed on the real projector before a live talk.
+**Status: beta.** Editing, presenting, PDF export and Talk mode work and are covered by unit tests, a template stress render and an end-to-end test in Xvfb. PowerPoint export is image-based, and dual-screen presenting should be rehearsed on the real projector before a live talk.
 
 NIRUX and every niru* project are made by me, Nicklas Rudolfsson
 ([@nirucon](https://github.com/nirucon)), for me. They are tailored to my own

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=NIRUPRES
+Comment=Minimal presentation studio with presenter view, PDF/PPTX export and talk recording
+Exec=nirupres %f
+TryExec=nirupres
+Terminal=false
+Icon=nirupres
+Categories=Office;Presentation;
+MimeType=application/x-nirupres;
+Keywords=presentation;slides;deck;pdf;record;talk;
+StartupWMClass=nirupres

@@ -17,10 +17,12 @@ rm -f -- "$HOME/.local/bin/nirupres" "$DATA_ROOT/applications/nirupres.desktop" 
     "$DATA_ROOT/icons/hicolor/scalable/apps/nirupres.svg" "$DATA_ROOT/mime/packages/nirupres.xml"
 command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$DATA_ROOT/mime" >/dev/null 2>&1 || :
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$DATA_ROOT/applications" >/dev/null 2>&1 || :
+rm -rf -- "${XDG_CACHE_HOME:-$HOME/.cache}/nirupres"
 if [ "$purge" = 1 ]; then
     rm -rf -- "$DEST"
     echo "NIRUPRES removed, including preferences and autosave."
 else
+    # A 2.x (Python) installation also had code and a virtual environment here.
     rm -rf -- "$DEST/nirupres" "$DEST/tests" "$DEST/.venv"
     rm -f -- "$DEST/run.sh" "$DEST/requirements.txt"
     echo "NIRUPRES removed. Preferences and autosave were kept in $DEST"

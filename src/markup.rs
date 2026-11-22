@@ -187,15 +187,32 @@ mod tests {
             ]
         );
         assert_eq!(runs("x * y"), vec![r("x * y", false, false)]);
-        assert_eq!(runs("snake_case_name"), vec![r("snake", false, false), r("case", false, true), r("name", false, false)]);
-        assert_eq!(runs("**a *b* c**"), vec![r("a ", true, false), r("b", true, true), r(" c", true, false)]);
+        assert_eq!(
+            runs("snake_case_name"),
+            vec![
+                r("snake", false, false),
+                r("case", false, true),
+                r("name", false, false)
+            ]
+        );
+        assert_eq!(
+            runs("**a *b* c**"),
+            vec![
+                r("a ", true, false),
+                r("b", true, true),
+                r(" c", true, false)
+            ]
+        );
         assert!(!has_markup("plain text"));
     }
 
     #[test]
     fn plain_and_format() {
         assert_eq!(plain("**a** _b_ \\*c"), "a b \\*c");
-        assert_eq!(format_selection("one\n  two ", "bold"), "**one**\n  **two** ");
+        assert_eq!(
+            format_selection("one\n  two ", "bold"),
+            "**one**\n  **two** "
+        );
         assert_eq!(format_selection("**one**", "bold"), "one");
         assert_eq!(format_selection("*x*", "italic"), "x");
         assert_eq!(format_selection("**x**", "normal"), "x");

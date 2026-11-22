@@ -478,7 +478,12 @@ impl X {
 
     /// Toggle an EWMH state on a mapped window.
     pub fn set_state(&self, win: Window, on: bool, a: Atom, b: Atom) {
-        let ev = ClientMessageEvent::new(32, win, self.atoms.net_wm_state, [u32::from(on), a, b, 1, 0]);
+        let ev = ClientMessageEvent::new(
+            32,
+            win,
+            self.atoms.net_wm_state,
+            [u32::from(on), a, b, 1, 0],
+        );
         let _ = self.c.send_event(
             false,
             self.root,
@@ -501,7 +506,12 @@ impl X {
         let _ = self
             .c
             .configure_window(win, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE));
-        let ev = ClientMessageEvent::new(32, win, self.atoms.net_active, [1, x11rb::CURRENT_TIME, 0, 0, 0]);
+        let ev = ClientMessageEvent::new(
+            32,
+            win,
+            self.atoms.net_active,
+            [1, x11rb::CURRENT_TIME, 0, 0, 0],
+        );
         let _ = self.c.send_event(
             false,
             self.root,
@@ -530,7 +540,14 @@ impl X {
     pub fn root_theme(&self) -> Option<String> {
         let r = self
             .c
-            .get_property(false, self.root, self.atoms.niruwm_theme, AtomEnum::ANY, 0, 64)
+            .get_property(
+                false,
+                self.root,
+                self.atoms.niruwm_theme,
+                AtomEnum::ANY,
+                0,
+                64,
+            )
             .ok()?
             .reply()
             .ok()?;
@@ -576,7 +593,11 @@ impl X {
             }
         }
         let mut out = Vec::new();
-        if let Ok(Ok(r)) = self.c.randr_get_monitors(self.root, true).map(|c| c.reply()) {
+        if let Ok(Ok(r)) = self
+            .c
+            .randr_get_monitors(self.root, true)
+            .map(|c| c.reply())
+        {
             for m in r.monitors {
                 let name = self
                     .c
@@ -697,7 +718,11 @@ impl X {
 
     /// Release the shared segment (the big windows are gone).
     pub fn shrink_shm(&mut self, keep: usize) {
-        if self.shm.as_ref().is_some_and(|s| s.size > keep.next_multiple_of(1 << 20) * 2) {
+        if self
+            .shm
+            .as_ref()
+            .is_some_and(|s| s.size > keep.next_multiple_of(1 << 20) * 2)
+        {
             self.drop_shm();
         }
     }
@@ -828,9 +853,21 @@ impl X {
             Some(text) if e.selection == a.clipboard => {
                 if e.target == a.targets {
                     let t = [a.targets, a.utf8, u32::from(AtomEnum::STRING)];
-                    let _ = self.c.change_property32(PropMode::REPLACE, e.requestor, prop, AtomEnum::ATOM, &t);
+                    let _ = self.c.change_property32(
+                        PropMode::REPLACE,
+                        e.requestor,
+                        prop,
+                        AtomEnum::ATOM,
+                        &t,
+                    );
                 } else if e.target == a.utf8 || e.target == u32::from(AtomEnum::STRING) {
-                    let _ = self.c.change_property8(PropMode::REPLACE, e.requestor, prop, e.target, text.as_bytes());
+                    let _ = self.c.change_property8(
+                        PropMode::REPLACE,
+                        e.requestor,
+                        prop,
+                        e.target,
+                        text.as_bytes(),
+                    );
                 } else {
                     prop = x11rb::NONE;
                 }
@@ -846,7 +883,9 @@ impl X {
             target: e.target,
             property: prop,
         };
-        let _ = self.c.send_event(false, e.requestor, EventMask::NO_EVENT, ev);
+        let _ = self
+            .c
+            .send_event(false, e.requestor, EventMask::NO_EVENT, ev);
         let _ = self.c.flush();
     }
 
@@ -928,7 +967,9 @@ impl X {
             Event::MapNotify(e) => Some(Ev::Mapped(e.window, true)),
             Event::UnmapNotify(e) => Some(Ev::Mapped(e.window, false)),
             Event::MappingNotify(_) => Some(Ev::Keymap),
-            Event::PropertyNotify(e) if e.window == self.root && e.atom == self.atoms.niruwm_theme => {
+            Event::PropertyNotify(e)
+                if e.window == self.root && e.atom == self.atoms.niruwm_theme =>
+            {
                 Some(Ev::Theme)
             }
             Event::SelectionRequest(e) => {
@@ -945,7 +986,14 @@ impl X {
                 if e.property != x11rb::NONE {
                     if let Ok(Ok(r)) = self
                         .c
-                        .get_property(true, d.target, self.atoms.dnd_prop, AtomEnum::ANY, 0, 1 << 22)
+                        .get_property(
+                            true,
+                            d.target,
+                            self.atoms.dnd_prop,
+                            AtomEnum::ANY,
+                            0,
+                            1 << 22,
+                        )
                         .map(|c| c.reply())
                     {
                         paths = parse_uris(&r.value);
@@ -955,7 +1003,13 @@ impl X {
                     32,
                     d.source,
                     self.atoms.xdnd_finished,
-                    [d.target, u32::from(!paths.is_empty()), self.atoms.xdnd_copy, 0, 0],
+                    [
+                        d.target,
+                        u32::from(!paths.is_empty()),
+                        self.atoms.xdnd_copy,
+                        0,
+                        0,
+                    ],
                 );
                 let _ = self.c.send_event(false, d.source, EventMask::NO_EVENT, fin);
                 let _ = self.c.flush();
@@ -993,7 +1047,8 @@ impl X {
                 dd.pos = (x, y);
                 dd.source = d[0];
             }
-            let st = ClientMessageEvent::new(32, d[0], a.xdnd_status, [e.window, 1, 0, 0, a.xdnd_copy]);
+            let st =
+                ClientMessageEvent::new(32, d[0], a.xdnd_status, [e.window, 1, 0, 0, a.xdnd_copy]);
             let _ = self.c.send_event(false, d[0], EventMask::NO_EVENT, st);
             let _ = self.c.flush();
             return Some(Ev::DndOver(e.window, x, y));
@@ -1003,13 +1058,9 @@ impl X {
             return Some(Ev::DndLeave(e.window));
         }
         if e.type_ == a.xdnd_drop {
-            let _ = self.c.convert_selection(
-                e.window,
-                a.xdnd_selection,
-                a.uri_list,
-                a.dnd_prop,
-                d[2],
-            );
+            let _ =
+                self.c
+                    .convert_selection(e.window, a.xdnd_selection, a.uri_list, a.dnd_prop, d[2]);
             let _ = self.c.flush();
             return None;
         }

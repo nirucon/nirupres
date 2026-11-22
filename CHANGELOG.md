@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.0.0: Rewritten in Rust, fast and light
+
+- **One static binary, no Python or Qt.** NIRUPRES is now written in Rust and
+  draws its own windows on X11 (x11rb and its own canvas). The window shows
+  after about 10 to 30 ms (2.4: about 330 to 650 ms) and it uses about 20 MB
+  of memory (2.4: about 100 MB). Nothing runs while it is idle.
+- **Decks look the same.** The renderer is a line-by-line port of 2.4: the 28
+  layouts, 17 themes, logo, footer and numbers, with text laid out like Qt did
+  (HarfBuzz shaping, the same metrics, line breaking, fit and ellipsis). The
+  template stress render (every layout, four text lengths, three sizes) passes
+  with the same notes as 2.4, and the renders match side by side.
+- **Project format 9 and Markdown format 2 are unchanged.** Every `.nirupres`
+  deck opens as before, with the same package safety checks. Images that are
+  already embedded are kept byte for byte when you save again (2.x encoded
+  them again on every save).
+- **PDF export in Rust:** vector slides (glyph outlines, shapes) with images,
+  the same A4 page as 2.x, searchable and copyable text.
+- **PowerPoint export in Rust:** one picture per visible slide with its
+  speaker notes, as before.
+- **Video slides** play through mpv in the audience window (local files, and
+  YouTube or Vimeo links with yt-dlp); `Space` plays and pauses.
+- Opening a deck from the file manager works (`nirupres deck.nirupres`; the
+  2.x launcher rejected the file argument).
+- Everything else is kept: presenter view, laptop and online presenting with
+  the share check, `_NIRUWM_KEEP_MAPPED`, the window titles and WM_CLASS,
+  presenting mode through `niructl`, Spotlight, Focus Reveal, Zoom, pause,
+  curtain, fades and transitions, Talk mode with NIRUCLIP, autosave and
+  recovery, profiles, deck health, NIRUX editor chrome and every shortcut.
+- The installer downloads the static release binary and checks its SHA-256
+  (`--build` builds it locally) and removes a 2.x installation's code and
+  virtual environment while keeping your preferences.
+
 ## 2.4.0: Fades you can see, aim from the presenter view
 
 - **The opening and closing fades are visible again.** In laptop and online

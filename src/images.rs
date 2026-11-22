@@ -332,7 +332,11 @@ fn resample_axis(src: &Img, n: u32, horizontal: bool) -> Img {
     let (sw, sh) = (src.w as usize, src.h as usize);
     let (len_src, other) = if horizontal { (sw, sh) } else { (sh, sw) };
     let len_dst = n as usize;
-    let (ow, oh) = if horizontal { (len_dst, sh) } else { (sw, len_dst) };
+    let (ow, oh) = if horizontal {
+        (len_dst, sh)
+    } else {
+        (sw, len_dst)
+    };
     let mut out = Img::new(ow as u32, oh as u32);
     if len_src == 0 {
         return out;
@@ -431,7 +435,10 @@ pub fn qt_scaled(sw: u32, sh: u32, tw: u32, th: u32, expand: bool) -> (u32, u32)
     if use_height {
         (rw.max(1) as u32, th.max(1))
     } else {
-        (tw.max(1), ((tw as i64) * (sh as i64) / (sw as i64)).max(1) as u32)
+        (
+            tw.max(1),
+            ((tw as i64) * (sh as i64) / (sw as i64)).max(1) as u32,
+        )
     }
 }
 
@@ -489,7 +496,8 @@ fn box_sizes(sigma: f32) -> [usize; 3] {
     let wi = ((12.0 * sigma * sigma / n) + 1.0).sqrt().floor();
     let wl = if (wi as i32) % 2 == 0 { wi - 1.0 } else { wi };
     let wu = wl + 2.0;
-    let m = ((12.0 * sigma * sigma - n * wl * wl - 4.0 * n * wl - 3.0 * n) / (-4.0 * wl - 4.0)).round();
+    let m =
+        ((12.0 * sigma * sigma - n * wl * wl - 4.0 * n * wl - 3.0 * n) / (-4.0 * wl - 4.0)).round();
     let mut out = [0usize; 3];
     for (i, o) in out.iter_mut().enumerate() {
         let size = if (i as f32) < m { wl } else { wu };
@@ -498,13 +506,26 @@ fn box_sizes(sigma: f32) -> [usize; 3] {
     out
 }
 
-fn box_pass(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, h: usize, r: usize, horizontal: bool) {
+fn box_pass(
+    src: &[[f32; 4]],
+    dst: &mut [[f32; 4]],
+    w: usize,
+    h: usize,
+    r: usize,
+    horizontal: bool,
+) {
     if r == 0 {
         dst.copy_from_slice(src);
         return;
     }
     let (len, lines) = if horizontal { (w, h) } else { (h, w) };
-    let idx = |line: usize, i: usize| if horizontal { line * w + i } else { i * w + line };
+    let idx = |line: usize, i: usize| {
+        if horizontal {
+            line * w + i
+        } else {
+            i * w + line
+        }
+    };
     let norm = 1.0 / (2 * r + 1) as f32;
     for line in 0..lines {
         let mut acc = [0f32; 4];
@@ -660,7 +681,13 @@ pub struct Treatment {
 /// `draw_image` up to the paint: returns the destination rectangle (in
 /// pixels of the target) and the finished image for it. `scale` maps the
 /// slide target size to output pixels (PDF uses a higher density).
-pub fn prepare(path: &Path, tw: i32, th: i32, t: &Treatment, density: f32) -> Option<(i32, i32, i32, i32, Arc<Img>)> {
+pub fn prepare(
+    path: &Path,
+    tw: i32,
+    th: i32,
+    t: &Treatment,
+    density: f32,
+) -> Option<(i32, i32, i32, i32, Arc<Img>)> {
     if tw <= 0 || th <= 0 {
         return None;
     }
@@ -680,15 +707,15 @@ pub fn prepare(path: &Path, tw: i32, th: i32, t: &Treatment, density: f32) -> Op
         }
     }
     let src = cached_source(path, tw as u32, th as u32)?;
-    let mut pm: Img = if t.mono { grayscale(&src) } else { (*src).clone() };
+    let mut pm: Img = if t.mono {
+        grayscale(&src)
+    } else {
+        (*src).clone()
+    };
     if t.blur > 0 {
         pm = blur(&pm, t.blur as f32);
     }
-    let zoom = if t.fill {
-        t.zoom.clamp(1.0, 1.18)
-    } else {
-        1.0
-    };
+    let zoom = if t.fill { t.zoom.clamp(1.0, 1.18) } else { 1.0 };
     // Slide-space target, then output pixels.
     let sw = ((tw as f32 * zoom) as u32).max(1);
     let sh = ((th as f32 * zoom) as u32).max(1);
@@ -729,7 +756,14 @@ pub fn prepare(path: &Path, tw: i32, th: i32, t: &Treatment, density: f32) -> Op
     Some(placement(tw, th, &img, t, density, img.clone()))
 }
 
-fn placement(tw: i32, th: i32, img: &Img, t: &Treatment, density: f32, arc: Arc<Img>) -> (i32, i32, i32, i32, Arc<Img>) {
+fn placement(
+    tw: i32,
+    th: i32,
+    img: &Img,
+    t: &Treatment,
+    density: f32,
+    arc: Arc<Img>,
+) -> (i32, i32, i32, i32, Arc<Img>) {
     let d = density.max(0.01);
     let iw = (img.w as f32 / d).round() as i32;
     let ih = (img.h as f32 / d).round() as i32;
@@ -845,17 +879,20 @@ pub fn encode_jpeg_rgb(w: u32, h: u32, rgb: &[u8], quality: u8) -> Option<Vec<u8
 
 pub fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
     let mut msg = data.to_vec();
     let bits = (data.len() as u64) * 8;
@@ -867,7 +904,12 @@ pub fn sha256_hex(data: &[u8]) -> String {
     for chunk in msg.chunks_exact(64) {
         let mut w = [0u32; 64];
         for i in 0..16 {
-            w[i] = u32::from_be_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+            w[i] = u32::from_be_bytes([
+                chunk[i * 4],
+                chunk[i * 4 + 1],
+                chunk[i * 4 + 2],
+                chunk[i * 4 + 3],
+            ]);
         }
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);

@@ -151,7 +151,16 @@ impl Canvas {
     }
 
     /// Draw a coverage mask (one byte per pixel) in `color` at (x, y).
-    pub fn mask(&mut self, x: i32, y: i32, w: i32, h: i32, coverage: &[u8], color: u32, alpha: u32) {
+    pub fn mask(
+        &mut self,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        coverage: &[u8],
+        color: u32,
+        alpha: u32,
+    ) {
         let area = Rect::new(x, y, w, h).intersect(&self.clip);
         for py in area.y..area.y + area.h {
             let src_row = ((py - y) * w) as usize;
@@ -179,7 +188,9 @@ impl Canvas {
                 if a == 0 {
                     continue;
                 }
-                let c = ((img.data[s] as u32) << 16) | ((img.data[s + 1] as u32) << 8) | img.data[s + 2] as u32;
+                let c = ((img.data[s] as u32) << 16)
+                    | ((img.data[s + 1] as u32) << 8)
+                    | img.data[s + 2] as u32;
                 let i = dst_row + px as usize;
                 self.px[i] = blend(self.px[i], c, a);
             }
@@ -464,7 +475,8 @@ impl Painter for RasterPainter<'_> {
     }
     fn stroke_rect(&mut self, r: RectF, c: Rgba, width: f32) {
         let h = width / 2.0;
-        self.cv.fill_aa(RectF::new(r.x - h, r.y - h, r.w + width, width), c);
+        self.cv
+            .fill_aa(RectF::new(r.x - h, r.y - h, r.w + width, width), c);
         self.cv
             .fill_aa(RectF::new(r.x - h, r.bottom() - h, r.w + width, width), c);
         self.cv
@@ -486,7 +498,10 @@ impl Painter for RasterPainter<'_> {
                 let t = i as f32 / steps as f32;
                 let x = x1 + (x2 - x1) * t;
                 let y = y1 + (y2 - y1) * t;
-                self.cv.fill_aa(RectF::new(x - h, y - h, width, width), c.with_alpha(c.3 / 2));
+                self.cv.fill_aa(
+                    RectF::new(x - h, y - h, width, width),
+                    c.with_alpha(c.3 / 2),
+                );
             }
         }
     }

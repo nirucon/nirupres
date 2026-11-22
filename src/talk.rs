@@ -49,7 +49,13 @@ pub fn safe_stem(v: &str) -> String {
     let t: String = v
         .trim()
         .chars()
-        .map(|c| if c.is_alphanumeric() || "._- ".contains(c) { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || "._- ".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
     let t = t.trim_matches(|c| " .-_".contains(c));
@@ -81,11 +87,19 @@ pub struct Marker {
 
 pub fn srt_text(markers: &[Marker], duration: f64) -> String {
     let mut m = markers.to_vec();
-    m.sort_by(|a, b| a.seconds.partial_cmp(&b.seconds).unwrap_or(std::cmp::Ordering::Equal));
+    m.sort_by(|a, b| {
+        a.seconds
+            .partial_cmp(&b.seconds)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut rows = Vec::new();
     for (i, k) in m.iter().enumerate() {
         let start = k.seconds;
-        let end = m.get(i + 1).map(|n| n.seconds).unwrap_or(duration).max(start + 0.6);
+        let end = m
+            .get(i + 1)
+            .map(|n| n.seconds)
+            .unwrap_or(duration)
+            .max(start + 0.6);
         let title = if k.title.trim().is_empty() {
             format!("Slide {}", k.slide)
         } else {
@@ -156,7 +170,11 @@ impl Talk {
         Self {
             deck: deck.map(Path::to_path_buf),
             titles,
-            profile: if profile.is_empty() { "screen-mic".into() } else { profile.into() },
+            profile: if profile.is_empty() {
+                "screen-mic".into()
+            } else {
+                profile.into()
+            },
             process: None,
             log: output.with_extension("log"),
             output,
@@ -173,8 +191,10 @@ impl Talk {
         if ACTIVE.contains(&kind(&st).as_str()) {
             return Err("NIRUCLIP is already recording. Stop it before starting Talk mode.".into());
         }
-        let cmd = crate::presenting::command_path("niruclip").ok_or("NIRUCLIP is not installed or not in PATH.")?;
-        let log = std::fs::File::create(&self.log).map_err(|e| format!("Could not start NIRUCLIP: {e}"))?;
+        let cmd = crate::presenting::command_path("niruclip")
+            .ok_or("NIRUCLIP is not installed or not in PATH.")?;
+        let log = std::fs::File::create(&self.log)
+            .map_err(|e| format!("Could not start NIRUCLIP: {e}"))?;
         let log2 = log.try_clone().map_err(|e| e.to_string())?;
         use std::os::unix::process::CommandExt;
         let mut c = std::process::Command::new(cmd);
@@ -189,7 +209,9 @@ impl Talk {
                 Ok(())
             });
         }
-        let child = c.spawn().map_err(|e| format!("Could not start NIRUCLIP: {e}"))?;
+        let child = c
+            .spawn()
+            .map_err(|e| format!("Could not start NIRUCLIP: {e}"))?;
         self.process = Some(child);
         self.deadline = Instant::now() + Duration::from_secs(15);
         Ok(())
@@ -334,7 +356,13 @@ impl Talk {
                 .get("reason")
                 .map(|v| crate::model::py_str(Some(v)))
                 .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| if k.is_empty() { "recording was not finalized".into() } else { k.clone() });
+                .unwrap_or_else(|| {
+                    if k.is_empty() {
+                        "recording was not finalized".into()
+                    } else {
+                        k.clone()
+                    }
+                });
             return Err(format!("Talk recording did not finalize: {reason}"));
         }
         let mut duration = probe_duration(&recording);
@@ -381,13 +409,25 @@ fn probe_duration(p: &Path) -> f64 {
         return 0.0;
     };
     std::process::Command::new(probe)
-        .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"])
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+        ])
         .arg(p)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
         .ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<f64>().ok())
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .parse::<f64>()
+                .ok()
+        })
         .unwrap_or(0.0)
         .max(0.0)
 }
@@ -401,8 +441,16 @@ mod tests {
         assert_eq!(srt_time(3661.5), "01:01:01,500");
         assert_eq!(safe_stem("  My deck / v2 "), "My deck - v2");
         let m = vec![
-            Marker { slide: 1, title: "Intro".into(), seconds: 0.0 },
-            Marker { slide: 2, title: "".into(), seconds: 5.0 },
+            Marker {
+                slide: 1,
+                title: "Intro".into(),
+                seconds: 0.0,
+            },
+            Marker {
+                slide: 2,
+                title: "".into(),
+                seconds: 5.0,
+            },
         ];
         let s = srt_text(&m, 9.0);
         assert!(s.starts_with("1\n00:00:00,000 --> 00:00:05,000\n01 · Intro\n"));

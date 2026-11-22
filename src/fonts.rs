@@ -261,7 +261,7 @@ impl FontDb {
     fn candidates(&self, family: &str) -> Vec<usize> {
         let fl = family.to_lowercase();
         (0..self.entries.len())
-            .filter(|&i| self.entries[i].lower.iter().any(|f| *f == fl))
+            .filter(|&i| self.entries[i].lower.contains(&fl))
             .collect()
     }
 
@@ -409,13 +409,48 @@ fn fallback_entries() -> Vec<Entry> {
     // No fontconfig: look in the usual places for the fonts NIRUX installs.
     let mut v = Vec::new();
     for (file, fam, w, it) in [
-        ("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "Noto Sans", 400.0, false),
-        ("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "Noto Sans", 700.0, false),
-        ("/usr/share/fonts/noto/NotoSans-Regular.ttf", "Noto Sans", 400.0, false),
-        ("/usr/share/fonts/noto/NotoSans-Bold.ttf", "Noto Sans", 700.0, false),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVu Sans", 400.0, false),
-        ("/usr/share/fonts/TTF/DejaVuSans.ttf", "DejaVu Sans", 400.0, false),
-        ("/usr/share/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans", 400.0, false),
+        (
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "Noto Sans",
+            400.0,
+            false,
+        ),
+        (
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+            "Noto Sans",
+            700.0,
+            false,
+        ),
+        (
+            "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+            "Noto Sans",
+            400.0,
+            false,
+        ),
+        (
+            "/usr/share/fonts/noto/NotoSans-Bold.ttf",
+            "Noto Sans",
+            700.0,
+            false,
+        ),
+        (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "DejaVu Sans",
+            400.0,
+            false,
+        ),
+        (
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "DejaVu Sans",
+            400.0,
+            false,
+        ),
+        (
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "DejaVu Sans",
+            400.0,
+            false,
+        ),
     ] {
         if std::path::Path::new(file).is_file() {
             v.push(Entry {
@@ -514,7 +549,13 @@ thread_local! {
 
 /// Shape `text` (chars) with `primary`, falling back per character.
 /// Short texts (labels, lines) are cached.
-pub fn shape(text: &[char], primary: &Arc<Face>, px: f32, weight: u16, italic: bool) -> Vec<ShapedGlyph> {
+pub fn shape(
+    text: &[char],
+    primary: &Arc<Face>,
+    px: f32,
+    weight: u16,
+    italic: bool,
+) -> Vec<ShapedGlyph> {
     if text.is_empty() {
         return Vec::new();
     }
@@ -536,7 +577,13 @@ pub fn shape(text: &[char], primary: &Arc<Face>, px: f32, weight: u16, italic: b
     v
 }
 
-fn shape_uncached(text: &[char], primary: &Arc<Face>, px: f32, weight: u16, italic: bool) -> Vec<ShapedGlyph> {
+fn shape_uncached(
+    text: &[char],
+    primary: &Arc<Face>,
+    px: f32,
+    weight: u16,
+    italic: bool,
+) -> Vec<ShapedGlyph> {
     // Split into runs of one face each.
     let mut runs: Vec<(usize, usize, Arc<Face>)> = Vec::new();
     let mut fallbacks: Option<Vec<Arc<Face>>> = None;
@@ -678,8 +725,10 @@ pub fn rasterize(face: &Face, gid: u16, px: f32, fx: f32) -> Option<Mask> {
     let scale = px / face.upem;
     let shear = if face.oblique { SHEAR } else { 0.0 };
     let (x0, x1) = {
-        let a = (bb.x_min as f32 + bb.y_min as f32 * shear).min(bb.x_min as f32 + bb.y_max as f32 * shear);
-        let b = (bb.x_max as f32 + bb.y_min as f32 * shear).max(bb.x_max as f32 + bb.y_max as f32 * shear);
+        let a = (bb.x_min as f32 + bb.y_min as f32 * shear)
+            .min(bb.x_min as f32 + bb.y_max as f32 * shear);
+        let b = (bb.x_max as f32 + bb.y_min as f32 * shear)
+            .max(bb.x_max as f32 + bb.y_max as f32 * shear);
         (a * scale + fx, b * scale + fx)
     };
     let left = x0.floor() as i32;

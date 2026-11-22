@@ -67,7 +67,10 @@ pub fn system_documents_dir() -> PathBuf {
     if let Ok(t) = std::fs::read_to_string(cfg) {
         for line in t.lines() {
             if let Some(v) = line.trim().strip_prefix("XDG_DOCUMENTS_DIR=") {
-                let v = v.trim().trim_matches('"').replace("$HOME", &home().to_string_lossy());
+                let v = v
+                    .trim()
+                    .trim_matches('"')
+                    .replace("$HOME", &home().to_string_lossy());
                 docs = PathBuf::from(v);
             }
         }
@@ -82,7 +85,12 @@ pub fn system_documents_dir() -> PathBuf {
 impl FilePrefs {
     pub fn load() -> Self {
         let raw = read_obj(&file("file-workflow.json"));
-        let s = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let s = |k: &str| {
+            raw.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
         let remember = raw
             .get("rememberLastFolder")
             .map(|v| crate::model::truthy(Some(v)))
@@ -202,7 +210,9 @@ pub fn add_recent(path: &Path) {
     let _ = std::fs::create_dir_all(data_root());
     let _ = std::fs::write(
         file("recent.json"),
-        crate::package::py_json(&Value::Array(items.into_iter().map(Value::String).collect())),
+        crate::package::py_json(&Value::Array(
+            items.into_iter().map(Value::String).collect(),
+        )),
     );
 }
 
@@ -225,7 +235,10 @@ pub fn save_display_prefs(changes: &[(&str, Option<&str>)]) {
         }
     }
     let _ = std::fs::create_dir_all(data_root());
-    let _ = std::fs::write(file("display.json"), crate::package::py_json(&Value::Object(p)));
+    let _ = std::fs::write(
+        file("display.json"),
+        crate::package::py_json(&Value::Object(p)),
+    );
 }
 
 // ------------------------------------------------------------- inspector
@@ -260,7 +273,9 @@ pub fn save_inspector_state(open: &[bool]) {
 
 pub fn notes_px(default: i64) -> i64 {
     let p = read_obj(&file("presenter.json"));
-    let v = crate::model::to_i64(p.get("notesPx")).filter(|v| *v != 0).unwrap_or(default);
+    let v = crate::model::to_i64(p.get("notesPx"))
+        .filter(|v| *v != 0)
+        .unwrap_or(default);
     v.clamp(12, 64)
 }
 
@@ -323,7 +338,10 @@ pub const PROFILES: [Profile; 2] = [
 ];
 
 pub fn profile_info(name: &str) -> &'static Profile {
-    PROFILES.iter().find(|p| p.key == name).unwrap_or(&PROFILES[0])
+    PROFILES
+        .iter()
+        .find(|p| p.key == name)
+        .unwrap_or(&PROFILES[0])
 }
 
 const LEGACY_SETTINGS: [&str; 5] = [
@@ -348,9 +366,11 @@ pub fn resolve_profile(root: &Path) -> String {
     let path = root.join("profile.json");
     let mut unreadable = false;
     if path.exists() {
-        if let Some(name) = read_json(&path)
-            .and_then(|v| v.get("profile").and_then(|p| p.as_str()).map(str::to_string))
-        {
+        if let Some(name) = read_json(&path).and_then(|v| {
+            v.get("profile")
+                .and_then(|p| p.as_str())
+                .map(str::to_string)
+        }) {
             if PROFILES.iter().any(|p| p.key == name) {
                 return name;
             }

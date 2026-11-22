@@ -193,7 +193,11 @@ pub fn load_nirux(root_theme: Option<&str>) -> Option<Chrome> {
             if let Some(v) = tbl.get(*k).and_then(|v| v.as_str()).and_then(parse_hex) {
                 c[i] = v;
             } else if *k == "focus" {
-                if let Some(v) = tbl.get("accent").and_then(|v| v.as_str()).and_then(parse_hex) {
+                if let Some(v) = tbl
+                    .get("accent")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_hex)
+                {
                     c[i] = v;
                 }
             }

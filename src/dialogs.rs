@@ -179,7 +179,10 @@ fn strs(v: &[&str]) -> Vec<String> {
 pub fn open(e: &mut Editor, kind: Kind) {
     let d = build(e, kind);
     e.dialog = Some(d);
-    e.focus = e.dialog.as_ref().and_then(|d| d.fields.first().map(|f| Fid::D(*f)));
+    e.focus = e
+        .dialog
+        .as_ref()
+        .and_then(|d| d.fields.first().map(|f| Fid::D(*f)));
     e.popup = None;
     e.dirty_draw = true;
 }
@@ -190,7 +193,10 @@ pub fn open_child(e: &mut Editor, kind: Kind) {
     let mut d = build(e, kind);
     d.parent = parent;
     e.dialog = Some(d);
-    e.focus = e.dialog.as_ref().and_then(|d| d.fields.first().map(|f| Fid::D(*f)));
+    e.focus = e
+        .dialog
+        .as_ref()
+        .and_then(|d| d.fields.first().map(|f| Fid::D(*f)));
     e.dirty_draw = true;
 }
 
@@ -226,7 +232,10 @@ pub fn message(e: &mut Editor, title: &str, text: &str) {
 pub fn ask(e: &mut Editor, title: &str, text: &str, buttons: Vec<(&str, u16)>, then: Then) {
     let mut d = Dialog::new(Kind::Ask(then), title, 460);
     d.text = text.to_string();
-    d.buttons = buttons.into_iter().map(|(s, c)| (s.to_string(), c)).collect();
+    d.buttons = buttons
+        .into_iter()
+        .map(|(s, c)| (s.to_string(), c))
+        .collect();
     e.dialog = Some(d);
     e.focus = None;
     e.dirty_draw = true;
@@ -249,12 +258,28 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
         Kind::DeckSettings => {
             let mut d = Dialog::new(Kind::DeckSettings, "Deck settings", 520);
             let fams = crate::fonts::db().families();
-            d.combo(0, THEMES.iter().map(|t| t.name.to_string()).collect(), &normalize_theme(&s_get(&e.data, "theme", "B&W")));
+            d.combo(
+                0,
+                THEMES.iter().map(|t| t.name.to_string()).collect(),
+                &normalize_theme(&s_get(&e.data, "theme", "B&W")),
+            );
             d.combo(1, fams, &s_get(&e.data, "fontFamily", "Noto Sans"));
             d.combo(2, strs(&ASPECTS), &s_get(&e.data, "aspect", "16:9"));
-            d.combo(3, strs(&TRANSITIONS), &normalize_transition(e.data.get("transition"), false));
-            d.combo(4, strs(&["LEFT", "CENTER", "RIGHT"]), &normalize_footer_align(&s_get(&e.data, "footerAlign", "LEFT")));
-            d.combo(5, strs(&["SMALL", "MEDIUM", "LARGE"]), &normalize_footer_size(&s_get(&e.data, "footerSize", "MEDIUM")));
+            d.combo(
+                3,
+                strs(&TRANSITIONS),
+                &normalize_transition(e.data.get("transition"), false),
+            );
+            d.combo(
+                4,
+                strs(&["LEFT", "CENTER", "RIGHT"]),
+                &normalize_footer_align(&s_get(&e.data, "footerAlign", "LEFT")),
+            );
+            d.combo(
+                5,
+                strs(&["SMALL", "MEDIUM", "LARGE"]),
+                &normalize_footer_size(&s_get(&e.data, "footerSize", "MEDIUM")),
+            );
             let deck = Deck(&e.data);
             d.checks.insert(0, deck.reduce_motion());
             d.checks.insert(1, deck.flag_default_true("cinematicOpen"));
@@ -264,7 +289,8 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
             if !theme(&s_get(&e.data, "theme", "B&W")).is_some_and(|t| t.uddevalla) {
                 d.check_off.push(4);
             }
-            d.sliders.insert(0, (0, 120, i_get(&e.data, "targetMinutes", 0) as i32));
+            d.sliders
+                .insert(0, (0, 120, i_get(&e.data, "targetMinutes", 0) as i32));
             set(e, 0, &s_get(&e.data, "footerText", ""));
             d.fields = vec![0];
             d
@@ -273,7 +299,11 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
             let mut d = Dialog::new(Kind::FileWorkflow, "File workflow", 640);
             let fp = e.file_prefs.clone();
             d.checks.insert(0, fp.remember_last);
-            d.combo(0, strs(&["OPTIMIZED", "HIGH", "ORIGINAL"]), &fp.asset_quality);
+            d.combo(
+                0,
+                strs(&["OPTIMIZED", "HIGH", "ORIGINAL"]),
+                &fp.asset_quality,
+            );
             set(e, 0, &fp.default_folder);
             set(e, 1, &fp.last_folder);
             d.fields = vec![0, 1];
@@ -283,13 +313,19 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
             let mut d = Dialog::new(Kind::Palette, "NIRUPRES — Command Palette", 640);
             set(e, 0, "");
             d.fields = vec![0];
-            d.items = palette_commands().iter().map(|(n, _)| n.to_string()).collect();
+            d.items = palette_commands()
+                .iter()
+                .map(|(n, _)| n.to_string())
+                .collect();
             d.item_codes = (0..d.items.len()).collect();
             d
         }
         Kind::New => {
             let mut d = Dialog::new(Kind::New, "New presentation", 540);
-            let labels: Vec<String> = prefs::PROFILES.iter().map(|p| p.label.to_string()).collect();
+            let labels: Vec<String> = prefs::PROFILES
+                .iter()
+                .map(|p| p.label.to_string())
+                .collect();
             let cur = prefs::profile_info(&e.profile).label;
             d.combo(0, labels, cur);
             d
@@ -305,7 +341,11 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
             d
         }
         Kind::DisplaySetup(mons) => {
-            let mut d = Dialog::new(Kind::DisplaySetup(mons.clone()), "NIRUPRES — Display Setup", 600);
+            let mut d = Dialog::new(
+                Kind::DisplaySetup(mons.clone()),
+                "NIRUPRES — Display Setup",
+                600,
+            );
             let labels: Vec<String> = mons
                 .iter()
                 .enumerate()
@@ -324,7 +364,8 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
                 .collect();
             let prefs = prefs::display_prefs();
             let find = |name: Option<&str>, default: usize| -> usize {
-                name.and_then(|n| mons.iter().position(|m| m.name == n)).unwrap_or(default)
+                name.and_then(|n| mons.iter().position(|m| m.name == n))
+                    .unwrap_or(default)
             };
             let primary = mons.iter().position(|m| m.primary).unwrap_or(0);
             let pi = find(prefs.get("presenter").and_then(|v| v.as_str()), primary);
@@ -335,12 +376,23 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
             d
         }
         Kind::OneScreen { ask, from_start } => {
-            let mut d = Dialog::new(Kind::OneScreen { ask, from_start }, "Present on one screen", 560);
+            let mut d = Dialog::new(
+                Kind::OneScreen { ask, from_start },
+                "Present on one screen",
+                560,
+            );
             d.checks.insert(0, false);
             d
         }
         Kind::Recovery { info, when } => {
-            let mut d = Dialog::new(Kind::Recovery { info: info.clone(), when }, "Recover autosave", 460);
+            let mut d = Dialog::new(
+                Kind::Recovery {
+                    info: info.clone(),
+                    when,
+                },
+                "Recover autosave",
+                460,
+            );
             d.text = info;
             d.buttons = vec![("Restore".into(), 1), ("Discard".into(), 2)];
             d
@@ -348,7 +400,11 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
         Kind::Confirm(then) => {
             let mut d = Dialog::new(Kind::Confirm(then), "Unsaved changes", 460);
             d.text = "Save changes before continuing?".into();
-            d.buttons = vec![("Save".into(), 1), ("Discard".into(), 2), ("Cancel".into(), 3)];
+            d.buttons = vec![
+                ("Save".into(), 1),
+                ("Discard".into(), 2),
+                ("Cancel".into(), 3),
+            ];
             d
         }
         Kind::Assets(paths) => {
@@ -362,7 +418,9 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
 }
 
 pub fn open_text_editor(e: &mut Editor) {
-    let Some(s) = e.current().cloned() else { return };
+    let Some(s) = e.current().cloned() else {
+        return;
+    };
     let layout = s_get(&s, "layout", "");
     let two = layout == "TWO COLUMN" || layout == "COMPARE";
     let hint = match layout.as_str() {
@@ -380,11 +438,18 @@ pub fn open_text_editor(e: &mut Editor) {
         _ => "",
     }
     .to_string();
-    let mut d = Dialog::new(Kind::TextEditor { two, hint }, "Edit slide text", if two { 800 } else { 660 });
+    let mut d = Dialog::new(
+        Kind::TextEditor { two, hint },
+        "Edit slide text",
+        if two { 800 } else { 660 },
+    );
     set(e, 0, &s_get(&s, "title", ""));
     if two {
         let structured = b_get(&s, "sideStructured") || b_get(&s, "twoColumnStructured");
-        let (l, r) = if structured && s.get("leftColumn").is_some_and(|v| !v.is_null()) && s.get("rightColumn").is_some_and(|v| !v.is_null()) {
+        let (l, r) = if structured
+            && s.get("leftColumn").is_some_and(|v| !v.is_null())
+            && s.get("rightColumn").is_some_and(|v| !v.is_null())
+        {
             (s_or(&s, "leftColumn", ""), s_or(&s, "rightColumn", ""))
         } else {
             let (l, r, _) = parse_two_column_body(&s_get(&s, "body", ""));
@@ -409,13 +474,27 @@ pub fn open_about(e: &mut Editor, x: &X) {
     } else {
         mons.iter()
             .enumerate()
-            .map(|(i, m)| format!("  {}. {} — {}×{} @ {},{}", i + 1, m.name, m.w, m.h, m.x, m.y))
+            .map(|(i, m)| {
+                format!(
+                    "  {}. {} — {}×{} @ {},{}",
+                    i + 1,
+                    m.name,
+                    m.w,
+                    m.h,
+                    m.x,
+                    m.y
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
     let mut uts: libc::utsname = unsafe { std::mem::zeroed() };
     unsafe { libc::uname(&mut uts) };
-    let cs = |a: &[libc::c_char]| unsafe { std::ffi::CStr::from_ptr(a.as_ptr()) }.to_string_lossy().into_owned();
+    let cs = |a: &[libc::c_char]| {
+        unsafe { std::ffi::CStr::from_ptr(a.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
+    };
     let env = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.to_string());
     let text = format!(
         "NIRUPRES {VERSION}\n{TAGLINE}\n\nProject format: {FORMAT} · NIRUPRES Markdown spec: {MD_FORMAT}\nEngine: Rust, X11 (x11rb), own canvas\nPlatform: {} {}\nSession: {} · Wayland: {}\nDesktop: {} · Portal: {}\nEditor chrome: {}\nScreens:\n{screens}",
@@ -446,7 +525,11 @@ fn asset_rows(e: &Editor, paths: &[String]) -> Vec<String> {
         .map(|p| {
             let path = Path::new(p);
             let ok = path.exists();
-            let (w, h) = if ok { crate::images::dimensions(path) } else { (0, 0) };
+            let (w, h) = if ok {
+                crate::images::dimensions(path)
+            } else {
+                (0, 0)
+            };
             let size = if ok {
                 std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) as f64 / MB as f64
             } else {
@@ -456,7 +539,12 @@ fn asset_rows(e: &Editor, paths: &[String]) -> Vec<String> {
             let mut slides = Vec::new();
             for (i, s) in e.slides().iter().enumerate() {
                 let Some(s) = s.as_object() else { continue };
-                for (f, label) in [("image", "IMAGE"), ("backgroundImage", "BACKGROUND"), ("videoPoster", "VIDEO POSTER"), ("videoSource", "VIDEO")] {
+                for (f, label) in [
+                    ("image", "IMAGE"),
+                    ("backgroundImage", "BACKGROUND"),
+                    ("videoPoster", "VIDEO POSTER"),
+                    ("videoSource", "VIDEO"),
+                ] {
                     if s_get(s, f, "") == *p {
                         if !roles.contains(&label) {
                             roles.push(label);
@@ -466,7 +554,10 @@ fn asset_rows(e: &Editor, paths: &[String]) -> Vec<String> {
                 }
             }
             roles.sort();
-            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             format!(
                 "{}{name}    · {} · {w}×{h} · {size:.1} MB · slides {}",
                 if ok { "✓ " } else { "! MISSING  " },
@@ -504,9 +595,13 @@ fn exts_for(p: &FilePurpose) -> Vec<&'static str> {
         FilePurpose::ExportPng(_) => vec!["png"],
         FilePurpose::ExportPdf => vec!["pdf"],
         FilePurpose::ExportPptx => vec!["pptx"],
-        FilePurpose::ExportMd | FilePurpose::ExportAiBrief | FilePurpose::ExportAiTemplate => vec!["md"],
+        FilePurpose::ExportMd | FilePurpose::ExportAiBrief | FilePurpose::ExportAiTemplate => {
+            vec!["md"]
+        }
         FilePurpose::ImportMd => vec!["md", "markdown"],
-        FilePurpose::Image(_) | FilePurpose::ReplaceAsset(_) => vec!["png", "jpg", "jpeg", "webp", "bmp"],
+        FilePurpose::Image(_) | FilePurpose::ReplaceAsset(_) => {
+            vec!["png", "jpg", "jpeg", "webp", "bmp"]
+        }
         FilePurpose::Video => vec!["mp4", "webm", "mov", "mkv"],
         FilePurpose::ExportAllPng | FilePurpose::DefaultFolder => vec![],
     }
@@ -525,10 +620,18 @@ fn file_title(p: &FilePurpose) -> (&'static str, &'static str) {
         FilePurpose::ExportAiBrief => ("Export AI brief", "Markdown (*.md)"),
         FilePurpose::ExportAiTemplate => ("Export AI template", "Markdown (*.md)"),
         FilePurpose::ImportMd => ("Import NIRUPRES Markdown", "Markdown (*.md *.markdown)"),
-        FilePurpose::Image(Fid::BgImg) => ("Choose background image", "Images (*.png *.jpg *.jpeg *.webp *.bmp)"),
-        FilePurpose::Image(Fid::VideoPoster) => ("Choose video poster", "Images (*.png *.jpg *.jpeg *.webp *.bmp)"),
+        FilePurpose::Image(Fid::BgImg) => (
+            "Choose background image",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        ),
+        FilePurpose::Image(Fid::VideoPoster) => (
+            "Choose video poster",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        ),
         FilePurpose::Image(_) => ("Choose image", "Images (*.png *.jpg *.jpeg *.webp *.bmp)"),
-        FilePurpose::ReplaceAsset(_) => ("Replace image", "Images (*.png *.jpg *.jpeg *.webp *.bmp)"),
+        FilePurpose::ReplaceAsset(_) => {
+            ("Replace image", "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
+        }
         FilePurpose::Video => ("Choose local video", "Video (*.mp4 *.webm *.mov *.mkv)"),
         FilePurpose::DefaultFolder => ("Choose default presentation folder", "Folders"),
     }
@@ -545,7 +648,10 @@ pub fn file_dialog(e: &mut Editor, purpose: FilePurpose) {
             | FilePurpose::ExportAiBrief
             | FilePurpose::ExportAiTemplate
     );
-    let folder = matches!(purpose, FilePurpose::ExportAllPng | FilePurpose::DefaultFolder);
+    let folder = matches!(
+        purpose,
+        FilePurpose::ExportAllPng | FilePurpose::DefaultFolder
+    );
     let name = match &purpose {
         FilePurpose::SaveAs(_) => e
             .path
@@ -588,7 +694,11 @@ pub fn file_dialog(e: &mut Editor, purpose: FilePurpose) {
     let nested = e.dialog.is_some();
     let mut d = Dialog::new(Kind::File(st), title, 760);
     d.fields = vec![90, 91];
-    let parent = if nested { e.dialog.take().map(Box::new) } else { None };
+    let parent = if nested {
+        e.dialog.take().map(Box::new)
+    } else {
+        None
+    };
     d.parent = parent;
     set(e, 90, &name);
     set(e, 91, &dir.to_string_lossy());
@@ -607,7 +717,13 @@ pub fn file_dialog(e: &mut Editor, purpose: FilePurpose) {
 }
 
 fn list_dir(e: &mut Editor) {
-    let Some(Dialog { kind: Kind::File(st), .. }) = e.dialog.as_mut() else { return };
+    let Some(Dialog {
+        kind: Kind::File(st),
+        ..
+    }) = e.dialog.as_mut()
+    else {
+        return;
+    };
     let mut entries = Vec::new();
     if let Ok(rd) = std::fs::read_dir(&st.dir) {
         for de in rd.flatten() {
@@ -621,14 +737,18 @@ fn list_dir(e: &mut Editor) {
                     continue;
                 }
                 let lower = name.to_lowercase();
-                if !st.exts.is_empty() && !st.exts.iter().any(|x| lower.ends_with(&format!(".{x}"))) {
+                if !st.exts.is_empty() && !st.exts.iter().any(|x| lower.ends_with(&format!(".{x}")))
+                {
                     continue;
                 }
             }
             entries.push((name, is_dir));
         }
     }
-    entries.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    entries.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then(a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+    });
     st.entries = entries;
     let dir = st.dir.to_string_lossy().into_owned();
     if let Some(d) = e.dialog.as_mut() {
@@ -636,7 +756,13 @@ fn list_dir(e: &mut Editor) {
             Kind::File(st) => st
                 .entries
                 .iter()
-                .map(|(n, dir)| if *dir { format!("▸  {n}/") } else { format!("    {n}") })
+                .map(|(n, dir)| {
+                    if *dir {
+                        format!("▸  {n}/")
+                    } else {
+                        format!("    {n}")
+                    }
+                })
                 .collect(),
             _ => Vec::new(),
         };
@@ -648,7 +774,11 @@ fn list_dir(e: &mut Editor) {
 }
 
 fn file_accept(e: &mut Editor, x: &mut X) -> Request {
-    let Some(Dialog { kind: Kind::File(st), .. }) = e.dialog.as_ref() else {
+    let Some(Dialog {
+        kind: Kind::File(st),
+        ..
+    }) = e.dialog.as_ref()
+    else {
         return Request::None;
     };
     let st = st.clone();
@@ -656,8 +786,16 @@ fn file_accept(e: &mut Editor, x: &mut X) -> Request {
     let sel = e.dialog.as_ref().map(|d| d.sel).unwrap_or(0);
     let chosen: Option<PathBuf> = if st.folder {
         // The selected folder, or the current one.
-        let sub = st.entries.get(sel).filter(|en| en.1).map(|en| st.dir.join(&en.0));
-        Some(if name.is_empty() { sub.unwrap_or(st.dir.clone()) } else { resolve_name(&st.dir, &name) })
+        let sub = st
+            .entries
+            .get(sel)
+            .filter(|en| en.1)
+            .map(|en| st.dir.join(&en.0));
+        Some(if name.is_empty() {
+            sub.unwrap_or(st.dir.clone())
+        } else {
+            resolve_name(&st.dir, &name)
+        })
     } else if st.save {
         if name.trim().is_empty() {
             None
@@ -669,14 +807,18 @@ fn file_accept(e: &mut Editor, x: &mut X) -> Request {
         if !typed.is_empty() {
             Some(resolve_name(&st.dir, typed))
         } else {
-            st.entries
-                .get(sel)
-                .map(|(n, _)| st.dir.join(n))
+            st.entries.get(sel).map(|(n, _)| st.dir.join(n))
         }
     };
-    let Some(path) = chosen else { return Request::None };
+    let Some(path) = chosen else {
+        return Request::None;
+    };
     if path.is_dir() && !st.folder {
-        if let Some(Dialog { kind: Kind::File(s2), .. }) = e.dialog.as_mut() {
+        if let Some(Dialog {
+            kind: Kind::File(s2),
+            ..
+        }) = e.dialog.as_mut()
+        {
             s2.dir = path;
         }
         set(e, 90, if st.save { &name } else { "" });
@@ -690,11 +832,20 @@ fn file_accept(e: &mut Editor, x: &mut X) -> Request {
     let mut path = path;
     if st.save {
         let ext = st.exts.first().copied().unwrap_or("");
-        if !ext.is_empty() && !path.to_string_lossy().to_lowercase().ends_with(&format!(".{ext}")) {
+        if !ext.is_empty()
+            && !path
+                .to_string_lossy()
+                .to_lowercase()
+                .ends_with(&format!(".{ext}"))
+        {
             path = PathBuf::from(format!("{}.{ext}", path.display()));
         }
         if path.exists() && st.overwrite.as_ref() != Some(&path) {
-            if let Some(Dialog { kind: Kind::File(s2), .. }) = e.dialog.as_mut() {
+            if let Some(Dialog {
+                kind: Kind::File(s2),
+                ..
+            }) = e.dialog.as_mut()
+            {
                 s2.overwrite = Some(path.clone());
             }
             e.dirty_draw = true;
@@ -720,7 +871,11 @@ fn file_chosen(e: &mut Editor, x: &mut X, purpose: FilePurpose, p: PathBuf) -> R
     match purpose {
         FilePurpose::Open => {
             if let Err(err) = e.open_path(x, &p) {
-                message(e, "Open failed", &format!("NIRUPRES could not open this presentation.\n\n{err}"));
+                message(
+                    e,
+                    "Open failed",
+                    &format!("NIRUPRES could not open this presentation.\n\n{err}"),
+                );
             }
         }
         FilePurpose::SaveAs(then) => {
@@ -752,15 +907,23 @@ fn file_chosen(e: &mut Editor, x: &mut X, purpose: FilePurpose, p: PathBuf) -> R
             Err(err) => message(e, "Export failed", &err),
         },
         FilePurpose::ExportPptx => match crate::export::export_pptx(&e.data, &p) {
-            Ok(p) => e.set_status(&format!("Pixel-perfect PPTX exported: {}", p.display()), 3500),
+            Ok(p) => e.set_status(
+                &format!("Pixel-perfect PPTX exported: {}", p.display()),
+                3500,
+            ),
             Err(err) => message(e, "PPTX export", &err),
         },
         FilePurpose::ExportMd | FilePurpose::ExportAiBrief | FilePurpose::ExportAiTemplate => {
             let p = with(&p, ".md");
             let (text, what) = match purpose {
                 FilePurpose::ExportMd => (crate::markdown::export(&e.data), "Markdown exported"),
-                FilePurpose::ExportAiBrief => (crate::markdown::ai_brief(&e.data), "AI brief exported"),
-                _ => (crate::markdown::AI_TEMPLATE.to_string(), "AI template exported"),
+                FilePurpose::ExportAiBrief => {
+                    (crate::markdown::ai_brief(&e.data), "AI brief exported")
+                }
+                _ => (
+                    crate::markdown::AI_TEMPLATE.to_string(),
+                    "AI template exported",
+                ),
             };
             match std::fs::write(&p, text) {
                 Ok(_) => e.set_status(&format!("{what}: {}", p.display()), 3000),
@@ -790,7 +953,12 @@ fn file_chosen(e: &mut Editor, x: &mut X, purpose: FilePurpose, p: PathBuf) -> R
             let new = p.to_string_lossy().into_owned();
             let slides: Vec<usize> = (0..e.slides().len()).collect();
             for i in slides {
-                if let Some(s) = e.data.get_mut("slides").and_then(|v| v.get_mut(i)).and_then(|v| v.as_object_mut()) {
+                if let Some(s) = e
+                    .data
+                    .get_mut("slides")
+                    .and_then(|v| v.get_mut(i))
+                    .and_then(|v| v.as_object_mut())
+                {
                     for f in ["image", "backgroundImage", "videoPoster", "videoSource"] {
                         if s_get(s, f, "") == old {
                             s.insert(f.into(), json!(new));
@@ -810,7 +978,12 @@ fn file_chosen(e: &mut Editor, x: &mut X, purpose: FilePurpose, p: PathBuf) -> R
 
 fn set_slide(e: &mut Editor, key: &str, v: &str) {
     let i = e.cur;
-    if let Some(s) = e.data.get_mut("slides").and_then(|s| s.get_mut(i)).and_then(|s| s.as_object_mut()) {
+    if let Some(s) = e
+        .data
+        .get_mut("slides")
+        .and_then(|s| s.get_mut(i))
+        .and_then(|s| s.as_object_mut())
+    {
         s.insert(key.to_string(), json!(v));
     }
     e.mark_dirty();
@@ -832,7 +1005,11 @@ pub fn run_then(e: &mut Editor, x: &mut X, then: Then) -> Request {
         }
         Then::OpenPath(p) => {
             if let Err(err) = e.open_path(x, &p) {
-                message(e, "Open failed", &format!("NIRUPRES could not open this presentation.\n\n{err}"));
+                message(
+                    e,
+                    "Open failed",
+                    &format!("NIRUPRES could not open this presentation.\n\n{err}"),
+                );
             }
             Request::None
         }
@@ -886,7 +1063,10 @@ pub fn palette_commands() -> Vec<(String, Act)> {
     .map(|(n, a)| (n.to_string(), *a))
     .collect();
     for (i, p) in prefs::PROFILES.iter().enumerate() {
-        v.push((format!("Profile · {} (new decks)", p.label), Act::Profile(i as u8)));
+        v.push((
+            format!("Profile · {} (new decks)", p.label),
+            Act::Profile(i as u8),
+        ));
     }
     for (n, a) in [
         ("Talk · screen + microphone", Act::Talk(0)),
@@ -901,19 +1081,37 @@ pub fn palette_commands() -> Vec<(String, Act)> {
         v.push((n.into(), a));
     }
     for (i, m) in LOGO_MODES.iter().enumerate() {
-        v.push((format!("Selected slides · Logo {m}"), Act::ApplyLogo(i as u8)));
+        v.push((
+            format!("Selected slides · Logo {m}"),
+            Act::ApplyLogo(i as u8),
+        ));
     }
     for (i, m) in ACCENTS.iter().enumerate() {
-        v.push((format!("Selected slides · Accent {m}"), Act::ApplyAccent(i as u8)));
+        v.push((
+            format!("Selected slides · Accent {m}"),
+            Act::ApplyAccent(i as u8),
+        ));
     }
-    for (n, a) in [("Save", Act::Save), ("Save as", Act::SaveAs), ("Open", Act::Open), ("About / diagnostics", Act::About)] {
+    for (n, a) in [
+        ("Save", Act::Save),
+        ("Save as", Act::SaveAs),
+        ("Open", Act::Open),
+        ("About / diagnostics", Act::About),
+    ] {
         v.push((n.into(), a));
     }
     v
 }
 
 pub fn field_changed(e: &mut Editor, id: Fid) {
-    if let (Fid::D(0), Some(Dialog { kind: Kind::Palette, .. })) = (id, e.dialog.as_ref()) {
+    if let (
+        Fid::D(0),
+        Some(Dialog {
+            kind: Kind::Palette,
+            ..
+        }),
+    ) = (id, e.dialog.as_ref())
+    {
         let term = get(e, 0).to_lowercase();
         let term = term.trim().to_string();
         let cmds = palette_commands();
@@ -965,12 +1163,18 @@ pub fn submit(e: &mut Editor, x: &mut X, id: Fid) {
     match (kind, id) {
         (Some(Kind::Palette), _) => {
             let r = run_palette(e, x);
-            let _ = r;
+            if r != Request::None {
+                e.pending = Some(r);
+            }
         }
         (Some(Kind::File(_)), Fid::D(91)) => {
             let p = prefs::expand(get(e, 91).trim());
             if p.is_dir() {
-                if let Some(Dialog { kind: Kind::File(st), .. }) = e.dialog.as_mut() {
+                if let Some(Dialog {
+                    kind: Kind::File(st),
+                    ..
+                }) = e.dialog.as_mut()
+                {
                     st.dir = p;
                 }
                 list_dir(e);
@@ -978,12 +1182,15 @@ pub fn submit(e: &mut Editor, x: &mut X, id: Fid) {
         }
         (Some(Kind::File(_)), _) => {
             let r = file_accept(e, x);
-            if r == Request::Quit {
-                e.quit_after_present = true;
+            if r != Request::None {
+                e.pending = Some(r);
             }
         }
         (Some(_), _) => {
-            let _ = button(e, x, default_code(e));
+            let r = button(e, x, default_code(e));
+            if r != Request::None {
+                e.pending = Some(r);
+            }
         }
         _ => {}
     }
@@ -995,15 +1202,23 @@ fn default_code(e: &Editor) -> u16 {
         Some(Kind::DisplaySetup(_)) => 1,
         Some(Kind::OneScreen { .. }) => 21,
         Some(Kind::Message) | Some(Kind::Recovery { .. }) | Some(Kind::Confirm(_)) => 1,
-        Some(Kind::Ask(_)) => e.dialog.as_ref().and_then(|d| d.buttons.last().map(|b| b.1)).unwrap_or(0),
+        Some(Kind::Ask(_)) => e
+            .dialog
+            .as_ref()
+            .and_then(|d| d.buttons.last().map(|b| b.1))
+            .unwrap_or(0),
         Some(Kind::About(_)) => 2,
         _ => 0,
     }
 }
 
 fn run_palette(e: &mut Editor, x: &mut X) -> Request {
-    let Some(d) = e.dialog.as_ref() else { return Request::None };
-    let Some(&code) = d.item_codes.get(d.sel) else { return Request::None };
+    let Some(d) = e.dialog.as_ref() else {
+        return Request::None;
+    };
+    let Some(&code) = d.item_codes.get(d.sel) else {
+        return Request::None;
+    };
     let cmds = palette_commands();
     close(e);
     match cmds.get(code) {
@@ -1020,7 +1235,11 @@ pub fn key(e: &mut Editor, x: &mut X, sym: u32, state: u16, ch: Option<char>) ->
     if sym == K_ESCAPE {
         if let Some(Kind::File(st)) = &kind {
             if st.overwrite.is_some() {
-                if let Some(Dialog { kind: Kind::File(s2), .. }) = e.dialog.as_mut() {
+                if let Some(Dialog {
+                    kind: Kind::File(s2),
+                    ..
+                }) = e.dialog.as_mut()
+                {
                     s2.overwrite = None;
                 }
                 e.dirty_draw = true;
@@ -1029,7 +1248,10 @@ pub fn key(e: &mut Editor, x: &mut X, sym: u32, state: u16, ch: Option<char>) ->
         }
         return cancel(e, x);
     }
-    let list_kind = matches!(kind, Some(Kind::Palette) | Some(Kind::Health(_)) | Some(Kind::Assets(_)) | Some(Kind::File(_)));
+    let list_kind = matches!(
+        kind,
+        Some(Kind::Palette) | Some(Kind::Health(_)) | Some(Kind::Assets(_)) | Some(Kind::File(_))
+    );
     if list_kind && matches!(sym, K_UP | K_DOWN | K_PRIOR | K_NEXT) {
         if let Some(d) = e.dialog.as_mut() {
             let n = d.items.len() as i32;
@@ -1065,7 +1287,11 @@ pub fn key(e: &mut Editor, x: &mut X, sym: u32, state: u16, ch: Option<char>) ->
                 if let Some(pos) = fs.iter().position(|f| Fid::D(*f) == id) {
                     let back = sym == K_ISO_LEFT_TAB || state & x::SHIFT != 0;
                     let n = fs.len();
-                    let next = if back { (pos + n - 1) % n } else { (pos + 1) % n };
+                    let next = if back {
+                        (pos + n - 1) % n
+                    } else {
+                        (pos + 1) % n
+                    };
                     e.focus = Some(Fid::D(fs[next]));
                     e.dirty_draw = true;
                     return Request::None;
@@ -1137,7 +1363,10 @@ pub fn click(e: &mut Editor, x: &mut X, hit: Hit, mx: i32, my: i32, clicks: u8) 
                 d.sel = i;
             }
             e.dirty_draw = true;
-            let single = matches!(e.dialog.as_ref().map(|d| &d.kind), Some(Kind::Health(_)) | Some(Kind::Palette));
+            let single = matches!(
+                e.dialog.as_ref().map(|d| &d.kind),
+                Some(Kind::Health(_)) | Some(Kind::Palette)
+            );
             if clicks >= 2 || single {
                 return activate_item(e, x);
             }
@@ -1152,7 +1381,9 @@ pub fn click(e: &mut Editor, x: &mut X, hit: Hit, mx: i32, my: i32, clicks: u8) 
 }
 
 fn activate_item(e: &mut Editor, x: &mut X) -> Request {
-    let Some(d) = e.dialog.as_ref() else { return Request::None };
+    let Some(d) = e.dialog.as_ref() else {
+        return Request::None;
+    };
     let sel = d.sel;
     match d.kind.clone() {
         Kind::Palette => run_palette(e, x),
@@ -1169,7 +1400,11 @@ fn activate_item(e: &mut Editor, x: &mut X) -> Request {
         Kind::File(st) => {
             if let Some((name, is_dir)) = st.entries.get(sel).cloned() {
                 if is_dir {
-                    if let Some(Dialog { kind: Kind::File(s2), .. }) = e.dialog.as_mut() {
+                    if let Some(Dialog {
+                        kind: Kind::File(s2),
+                        ..
+                    }) = e.dialog.as_mut()
+                    {
                         s2.dir = st.dir.join(name);
                     }
                     list_dir(e);
@@ -1186,9 +1421,13 @@ fn activate_item(e: &mut Editor, x: &mut X) -> Request {
 }
 
 fn apply_format(e: &mut Editor, kind: &str) {
-    let target = e.focus.filter(|f| matches!(f, Fid::D(0) | Fid::D(100) | Fid::D(101) | Fid::D(102)));
+    let target = e
+        .focus
+        .filter(|f| matches!(f, Fid::D(0) | Fid::D(100) | Fid::D(101) | Fid::D(102)));
     let Some(id) = target else { return };
-    let Some(ed) = e.edits.get_mut(&id) else { return };
+    let Some(ed) = e.edits.get_mut(&id) else {
+        return;
+    };
     let text = ed.selected();
     if text.is_empty() {
         return;
@@ -1263,7 +1502,14 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                 close(e);
                 let data = &mut e.data;
                 data.insert("theme".into(), json!(th));
-                data.insert("fontFamily".into(), json!(if font.is_empty() { "Noto Sans".to_string() } else { font }));
+                data.insert(
+                    "fontFamily".into(),
+                    json!(if font.is_empty() {
+                        "Noto Sans".to_string()
+                    } else {
+                        font
+                    }),
+                );
                 data.insert("aspect".into(), json!(aspect));
                 data.insert("showNumbers".into(), json!(nu));
                 data.insert("showLogo".into(), json!(lo));
@@ -1320,7 +1566,10 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
             1 => {
                 let title = get(e, 0);
                 let i = e.cur;
-                let layout = e.current().map(|s| s_get(s, "layout", "")).unwrap_or_default();
+                let layout = e
+                    .current()
+                    .map(|s| s_get(s, "layout", ""))
+                    .unwrap_or_default();
                 if two {
                     let left = get(e, 101).trim().to_string();
                     let right = get(e, 102).trim().to_string();
@@ -1329,7 +1578,12 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                     } else {
                         format!("{left}\n\n|||\n\n{right}")
                     };
-                    if let Some(s) = e.data.get_mut("slides").and_then(|v| v.get_mut(i)).and_then(|v| v.as_object_mut()) {
+                    if let Some(s) = e
+                        .data
+                        .get_mut("slides")
+                        .and_then(|v| v.get_mut(i))
+                        .and_then(|v| v.as_object_mut())
+                    {
                         s.insert("title".into(), json!(title));
                         s.insert("leftColumn".into(), json!(left));
                         s.insert("rightColumn".into(), json!(right));
@@ -1339,7 +1593,12 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                     }
                 } else {
                     let body = get(e, 100);
-                    if let Some(s) = e.data.get_mut("slides").and_then(|v| v.get_mut(i)).and_then(|v| v.as_object_mut()) {
+                    if let Some(s) = e
+                        .data
+                        .get_mut("slides")
+                        .and_then(|v| v.get_mut(i))
+                        .and_then(|v| v.as_object_mut())
+                    {
                         s.insert("title".into(), json!(title));
                         s.insert("body".into(), json!(body));
                     }
@@ -1368,7 +1627,10 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
         Kind::New => {
             let d = e.dialog.as_ref().unwrap();
             let pidx = d.combo_index(0);
-            let profile = prefs::PROFILES.get(pidx).map(|p| p.key).unwrap_or("neutral");
+            let profile = prefs::PROFILES
+                .get(pidx)
+                .map(|p| p.key)
+                .unwrap_or("neutral");
             match code {
                 0 => {
                     close(e);
@@ -1382,7 +1644,10 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                 }
                 c if c >= 10 => {
                     let starters = prefs::profile_info(profile).starters;
-                    let th = starters.get((c - 10) as usize).map(|s| s.1).unwrap_or("B&W");
+                    let th = starters
+                        .get((c - 10) as usize)
+                        .map(|s| s.1)
+                        .unwrap_or("B&W");
                     close(e);
                     if profile != e.profile {
                         e.act(x, Act::Profile(pidx as u8), None);
@@ -1417,7 +1682,10 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                 let (pi, ai) = (d.combo_index(0), d.combo_index(1));
                 close(e);
                 if let (Some(p), Some(a)) = (mons.get(pi), mons.get(ai)) {
-                    prefs::save_display_prefs(&[("presenter", Some(&p.name)), ("audience", Some(&a.name))]);
+                    prefs::save_display_prefs(&[
+                        ("presenter", Some(&p.name)),
+                        ("audience", Some(&a.name)),
+                    ]);
                 }
                 return Request::Present(PresentReq {
                     start: e.cur,
@@ -1431,8 +1699,12 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
             2 => {
                 if let Some(d) = e.dialog.as_mut() {
                     let (pi, ai) = (d.combo_index(0), d.combo_index(1));
-                    d.combos.get_mut(&0).map(|c| c.1 = ai);
-                    d.combos.get_mut(&1).map(|c| c.1 = pi);
+                    if let Some(c) = d.combos.get_mut(&0) {
+                        c.1 = ai;
+                    }
+                    if let Some(c) = d.combos.get_mut(&1) {
+                        c.1 = pi;
+                    }
                 }
             }
             _ => close(e),
@@ -1463,19 +1735,34 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                     Some(Kind::File(st)) => st.dir.parent().map(Path::to_path_buf),
                     _ => None,
                 };
-                if let (Some(up), Some(Dialog { kind: Kind::File(st), .. })) = (up, e.dialog.as_mut()) {
+                if let (
+                    Some(up),
+                    Some(Dialog {
+                        kind: Kind::File(st),
+                        ..
+                    }),
+                ) = (up, e.dialog.as_mut())
+                {
                     st.dir = up;
                 }
                 list_dir(e);
             }
             3 => {
-                if let Some(Dialog { kind: Kind::File(st), .. }) = e.dialog.as_mut() {
+                if let Some(Dialog {
+                    kind: Kind::File(st),
+                    ..
+                }) = e.dialog.as_mut()
+                {
                     st.dir = prefs::home();
                 }
                 list_dir(e);
             }
             4 => {
-                if let Some(Dialog { kind: Kind::File(st), .. }) = e.dialog.as_mut() {
+                if let Some(Dialog {
+                    kind: Kind::File(st),
+                    ..
+                }) = e.dialog.as_mut()
+                {
                     st.hidden = !st.hidden;
                 }
                 list_dir(e);
@@ -1485,7 +1772,11 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
                 return file_accept(e, x);
             }
             6 => {
-                if let Some(Dialog { kind: Kind::File(st), .. }) = e.dialog.as_mut() {
+                if let Some(Dialog {
+                    kind: Kind::File(st),
+                    ..
+                }) = e.dialog.as_mut()
+                {
                     st.overwrite = None;
                 }
             }
@@ -1522,7 +1813,12 @@ enum Row {
 fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
     let mut v = Vec::new();
     let c = &e.c;
-    let ok_cancel = |ok: &str| Row::Buttons(vec![(ok.to_string(), 1, BtnKind::Primary, false), ("Cancel".into(), 0, BtnKind::Normal, false)]);
+    let ok_cancel = |ok: &str| {
+        Row::Buttons(vec![
+            (ok.to_string(), 1, BtnKind::Primary, false),
+            ("Cancel".into(), 0, BtnKind::Normal, false),
+        ])
+    };
     match &d.kind {
         Kind::Message | Kind::Ask(_) | Kind::Confirm(_) | Kind::Recovery { .. } => {
             v.push(Row::Text(d.text.clone(), blend(c.fg, c.bg, 0.1)));
@@ -1531,7 +1827,18 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 d.buttons
                     .iter()
                     .enumerate()
-                    .map(|(i, (l, code))| (l.clone(), *code, if i == 0 { BtnKind::Primary } else { BtnKind::Normal }, false))
+                    .map(|(i, (l, code))| {
+                        (
+                            l.clone(),
+                            *code,
+                            if i == 0 {
+                                BtnKind::Primary
+                            } else {
+                                BtnKind::Normal
+                            },
+                            false,
+                        )
+                    })
                     .collect(),
             ));
         }
@@ -1571,12 +1878,21 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 .iter()
                 .enumerate()
                 .map(|(i, l)| {
-                    let h = hints.iter().find(|(n, _)| n == l).map(|(_, h)| *h).unwrap_or("");
+                    let h = hints
+                        .iter()
+                        .find(|(n, _)| n == l)
+                        .map(|(_, h)| *h)
+                        .unwrap_or("");
                     (l.to_string(), h.to_string(), 100 + i as u16)
                 })
                 .collect();
             v.push(Row::Grid(4, 62, cells));
-            v.push(Row::Buttons(vec![("CANCEL".into(), 0, BtnKind::Normal, false)]));
+            v.push(Row::Buttons(vec![(
+                "CANCEL".into(),
+                0,
+                BtnKind::Normal,
+                false,
+            )]));
         }
         Kind::DeckSettings => {
             let info = e.profile_info();
@@ -1584,27 +1900,73 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
             v.push(Row::Form("Typeface".into(), Ctl::Combo(1)));
             v.push(Row::Form("Format".into(), Ctl::Combo(2)));
             v.push(Row::Form("Transition".into(), Ctl::Combo(3)));
-            v.push(Row::Form("Reduce motion".into(), Ctl::Check(0, "Disable presentation motion without changing saved transitions".into())));
-            v.push(Row::Form("Opening".into(), Ctl::Check(1, "Fade in first slide from black".into())));
-            v.push(Row::Form("Closing".into(), Ctl::Check(2, "Fade out to black when ending".into())));
+            v.push(Row::Form(
+                "Reduce motion".into(),
+                Ctl::Check(
+                    0,
+                    "Disable presentation motion without changing saved transitions".into(),
+                ),
+            ));
+            v.push(Row::Form(
+                "Opening".into(),
+                Ctl::Check(1, "Fade in first slide from black".into()),
+            ));
+            v.push(Row::Form(
+                "Closing".into(),
+                Ctl::Check(2, "Fade out to black when ending".into()),
+            ));
             let tm = d.slider_def(Sid::D(0)).2;
-            v.push(Row::Form("Target time".into(), Ctl::Slider(0, if tm == 0 { "OFF".into() } else { format!("{tm} min") })));
-            v.push(Row::Form("Slide numbers".into(), Ctl::Check(3, "Show minimal slide numbers".into())));
-            v.push(Row::Form(info.logo_row.into(), Ctl::Check(4, info.logo_checkbox.into())));
-            v.push(Row::Form("Footer".into(), Ctl::Field(0, info.footer_placeholder_short)));
+            v.push(Row::Form(
+                "Target time".into(),
+                Ctl::Slider(
+                    0,
+                    if tm == 0 {
+                        "OFF".into()
+                    } else {
+                        format!("{tm} min")
+                    },
+                ),
+            ));
+            v.push(Row::Form(
+                "Slide numbers".into(),
+                Ctl::Check(3, "Show minimal slide numbers".into()),
+            ));
+            v.push(Row::Form(
+                info.logo_row.into(),
+                Ctl::Check(4, info.logo_checkbox.into()),
+            ));
+            v.push(Row::Form(
+                "Footer".into(),
+                Ctl::Field(0, info.footer_placeholder_short),
+            ));
             v.push(Row::Form("Footer alignment".into(), Ctl::Combo(4)));
             v.push(Row::Form("Footer size".into(), Ctl::Combo(5)));
-            v.push(Row::Form("Files".into(), Ctl::Btn("FILE WORKFLOW…".into(), 2, BtnKind::Normal)));
+            v.push(Row::Form(
+                "Files".into(),
+                Ctl::Btn("FILE WORKFLOW…".into(), 2, BtnKind::Normal),
+            ));
             v.push(Row::Space(6));
             v.push(ok_cancel("Save"));
         }
         Kind::FileWorkflow => {
             v.push(Row::Form("Default folder".into(), Ctl::Field(0, "")));
-            v.push(Row::Form("".into(), Ctl::Btn("CHOOSE…".into(), 2, BtnKind::Normal)));
-            v.push(Row::Form("Open / save".into(), Ctl::Check(0, "Remember the last folder used".into())));
+            v.push(Row::Form(
+                "".into(),
+                Ctl::Btn("CHOOSE…".into(), 2, BtnKind::Normal),
+            ));
+            v.push(Row::Form(
+                "Open / save".into(),
+                Ctl::Check(0, "Remember the last folder used".into()),
+            ));
             v.push(Row::Form("Embedded images".into(), Ctl::Combo(0)));
-            v.push(Row::Form("Last folder".into(), Ctl::Field(1, "No remembered folder yet")));
-            v.push(Row::Form("".into(), Ctl::Btn("RESET TO SYSTEM DOCUMENTS".into(), 3, BtnKind::Normal)));
+            v.push(Row::Form(
+                "Last folder".into(),
+                Ctl::Field(1, "No remembered folder yet"),
+            ));
+            v.push(Row::Form(
+                "".into(),
+                Ctl::Btn("RESET TO SYSTEM DOCUMENTS".into(), 3, BtnKind::Normal),
+            ));
             v.push(Row::Space(6));
             v.push(ok_cancel("Save"));
         }
@@ -1617,11 +1979,20 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 (Ctl::Btn("N".into(), 13, BtnKind::Normal), 0),
             ]));
             if *two {
-                v.push(Row::Text("CONTENT · edit each side directly — no separator syntax needed".into(), c.muted));
-                v.push(Row::Line(vec![(Ctl::Area(101, 260), 1), (Ctl::Area(102, 260), 1)]));
+                v.push(Row::Text(
+                    "CONTENT · edit each side directly — no separator syntax needed".into(),
+                    c.muted,
+                ));
+                v.push(Row::Line(vec![
+                    (Ctl::Area(101, 260), 1),
+                    (Ctl::Area(102, 260), 1),
+                ]));
                 v.push(Row::Text("Blank lines add spacing · **bold** and *italic* supported · rendered exactly as written · no automatic headings".into(), c.label));
             } else {
-                v.push(Row::Text("BODY / SUBTITLE / ATTRIBUTION · **bold** · *italic*".into(), c.muted));
+                v.push(Row::Text(
+                    "BODY / SUBTITLE / ATTRIBUTION · **bold** · *italic*".into(),
+                    c.muted,
+                ));
                 if !hint.is_empty() {
                     v.push(Row::Text(hint.clone(), c.label));
                 }
@@ -1648,9 +2019,17 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
             let pidx = d.combo_index(0);
             let starters = prefs::PROFILES.get(pidx).map(|p| p.starters).unwrap_or(&[]);
             for (i, (label, _)) in starters.iter().enumerate() {
-                v.push(Row::Full(Ctl::Btn(label.to_string(), 10 + i as u16, BtnKind::Normal)));
+                v.push(Row::Full(Ctl::Btn(
+                    label.to_string(),
+                    10 + i as u16,
+                    BtnKind::Normal,
+                )));
             }
-            v.push(Row::Full(Ctl::Btn("FROM MARKDOWN / AI…".into(), 1, BtnKind::Normal)));
+            v.push(Row::Full(Ctl::Btn(
+                "FROM MARKDOWN / AI…".into(),
+                1,
+                BtnKind::Normal,
+            )));
             v.push(Row::Full(Ctl::Btn("CANCEL".into(), 0, BtnKind::Normal)));
         }
         Kind::Assets(paths) => {
@@ -1678,7 +2057,12 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
             let n = e.slides().len();
             let cnt = |k: &str| issues.iter().filter(|x| x.1 == k).count();
             v.push(Row::Text(
-                format!("{n} slides  ·  {} errors  ·  {} warnings  ·  {} image requests", cnt("ERROR"), cnt("WARN"), cnt("TODO")),
+                format!(
+                    "{n} slides  ·  {} errors  ·  {} warnings  ·  {} image requests",
+                    cnt("ERROR"),
+                    cnt("WARN"),
+                    cnt("TODO")
+                ),
                 c.fg,
             ));
             if issues.is_empty() {
@@ -1686,11 +2070,19 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
             } else {
                 v.push(Row::List(360));
             }
-            v.push(Row::Buttons(vec![("Close".into(), 0, BtnKind::Normal, false)]));
+            v.push(Row::Buttons(vec![(
+                "Close".into(),
+                0,
+                BtnKind::Normal,
+                false,
+            )]));
         }
         Kind::Overview => {
             let n = e.slides().len();
-            v.push(Row::Text(format!("{}  ·  {n} slides", s_get(&e.data, "title", "Untitled")), c.fg));
+            v.push(Row::Text(
+                format!("{}  ·  {n} slides", s_get(&e.data, "title", "Untitled")),
+                c.fg,
+            ));
             let cells = e
                 .slides()
                 .iter()
@@ -1699,18 +2091,38 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                     let s = s.as_object().cloned().unwrap_or_default();
                     let t = s_get(&s, "title", "");
                     (
-                        format!("{:02}  {}", i + 1, if t.is_empty() { "(untitled)".into() } else { t }),
-                        format!("{}{}", s_get(&s, "layout", "TITLE"), if b_get(&s, "hidden") { "  · HIDDEN" } else { "" }),
+                        format!(
+                            "{:02}  {}",
+                            i + 1,
+                            if t.is_empty() { "(untitled)".into() } else { t }
+                        ),
+                        format!(
+                            "{}{}",
+                            s_get(&s, "layout", "TITLE"),
+                            if b_get(&s, "hidden") {
+                                "  · HIDDEN"
+                            } else {
+                                ""
+                            }
+                        ),
                         1000 + i as u16,
                     )
                 })
                 .collect();
             v.push(Row::Grid(4, 80, cells));
-            v.push(Row::Buttons(vec![("Close".into(), 0, BtnKind::Normal, false)]));
+            v.push(Row::Buttons(vec![(
+                "Close".into(),
+                0,
+                BtnKind::Normal,
+                false,
+            )]));
         }
         Kind::DisplaySetup(_) => {
             v.push(Row::Head("DISPLAY SETUP".into()));
-            v.push(Row::Text("Choose where Presenter View and the audience presentation should appear.".into(), c.muted));
+            v.push(Row::Text(
+                "Choose where Presenter View and the audience presentation should appear.".into(),
+                c.muted,
+            ));
             v.push(Row::Form("Presenter display".into(), Ctl::Combo(0)));
             v.push(Row::Form("Audience display".into(), Ctl::Combo(1)));
             let same = d.combo_index(0) == d.combo_index(1);
@@ -1722,7 +2134,11 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 },
                 c.muted,
             ));
-            v.push(Row::Full(Ctl::Btn("⇄  SWAP DISPLAYS".into(), 2, BtnKind::Normal)));
+            v.push(Row::Full(Ctl::Btn(
+                "⇄  SWAP DISPLAYS".into(),
+                2,
+                BtnKind::Normal,
+            )));
             v.push(ok_cancel("OK"));
         }
         Kind::OneScreen { .. } => {
@@ -1731,7 +2147,10 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 format!("Only one display is connected.\n\nLaptop presenter (Teams, Meet, Zoom): your private presenter view with notes, next slide and timer fills the screen. Share the window “{}”.\n\nSlides only: the slides fill the screen, for a projector that mirrors this screen.", crate::present::AUDIENCE_TITLE),
                 blend(c.fg, c.bg, 0.1),
             ));
-            v.push(Row::Full(Ctl::Check(0, "Remember my choice (Presenter View… asks again)".into())));
+            v.push(Row::Full(Ctl::Check(
+                0,
+                "Remember my choice (Presenter View… asks again)".into(),
+            )));
             v.push(Row::Buttons(vec![
                 ("Cancel".into(), 0, BtnKind::Normal, true),
                 ("Slides only".into(), 20, BtnKind::Normal, false),
@@ -1743,18 +2162,37 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 (Ctl::Btn("↑".into(), 2, BtnKind::Normal), 0),
                 (Ctl::Btn("HOME".into(), 3, BtnKind::Normal), 0),
                 (Ctl::Field(91, ""), 1),
-                (Ctl::Btn(if st.hidden { "HIDE DOTFILES".into() } else { "SHOW DOTFILES".into() }, 4, BtnKind::Normal), 0),
+                (
+                    Ctl::Btn(
+                        if st.hidden {
+                            "HIDE DOTFILES".into()
+                        } else {
+                            "SHOW DOTFILES".into()
+                        },
+                        4,
+                        BtnKind::Normal,
+                    ),
+                    0,
+                ),
             ]));
             v.push(Row::List(330));
             if st.save {
                 v.push(Row::Form("Name".into(), Ctl::Field(90, "")));
             } else if !st.folder {
-                v.push(Row::Form("File".into(), Ctl::Field(90, "Pick a file or type a path")));
+                v.push(Row::Form(
+                    "File".into(),
+                    Ctl::Field(90, "Pick a file or type a path"),
+                ));
             }
             v.push(Row::Text(st.filter_name.clone(), c.label));
             if let Some(p) = &st.overwrite {
                 v.push(Row::Text(
-                    format!("{} already exists. Do you want to replace it?", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                    format!(
+                        "{} already exists. Do you want to replace it?",
+                        p.file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default()
+                    ),
                     0xffb020,
                 ));
                 v.push(Row::Buttons(vec![
@@ -1816,7 +2254,8 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
         }
     };
     let title_h = 30;
-    let mut total: i32 = title_h + pad + rws.iter().map(|r| row_h(r, &e.f) + 8).sum::<i32>() + pad - 8;
+    let mut total: i32 =
+        title_h + pad + rws.iter().map(|r| row_h(r, &e.f) + 8).sum::<i32>() + pad - 8;
     let max_h = ch - 40;
     let mut grid_scroll_room = 0;
     if total > max_h {
@@ -1832,30 +2271,69 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
     e.cv.fill(Rect::new(r.x + 1, r.y + 1, r.w - 2, title_h - 1), c.toolbar);
     e.cv.fill(Rect::new(r.x + 1, r.y + title_h, r.w - 2, 1), c.border);
     let tf = e.f.semi.clone();
-    ui::text_in(&mut e.cv, &tf, px, Rect::new(r.x + 12, r.y, r.w - 24, title_h), &d.title, c.muted, 0, 0.0);
+    ui::text_in(
+        &mut e.cv,
+        &tf,
+        px,
+        Rect::new(r.x + 12, r.y, r.w - 24, title_h),
+        &d.title,
+        c.muted,
+        0,
+        0.0,
+    );
     e.hits.push((r, Hit::Modal));
     let mut y = r.y + title_h + pad;
     let x0 = r.x + pad;
     e.cv.push_clip_rect(r.inset(1));
     for row in &rws {
-        let h = if matches!(row, Row::Grid(..)) { row_h(row, &e.f) - grid_scroll_room } else { row_h(row, &e.f) };
+        let h = if matches!(row, Row::Grid(..)) {
+            row_h(row, &e.f) - grid_scroll_room
+        } else {
+            row_h(row, &e.f)
+        };
         let h = h.max(20);
         match row {
             Row::Head(t) => {
                 let f = e.f.black.clone();
-                ui::text_in(&mut e.cv, &f, px * 1.5, Rect::new(x0, y, inner_w, h), t, blend(c.fg, 0xffffff, 0.2), 0, 1.5);
+                ui::text_in(
+                    &mut e.cv,
+                    &f,
+                    px * 1.5,
+                    Rect::new(x0, y, inner_w, h),
+                    t,
+                    blend(c.fg, 0xffffff, 0.2),
+                    0,
+                    1.5,
+                );
             }
             Row::Text(t, col) => {
                 let lines = ui::wrap(&e.f.sans, px, t, inner_w as f32);
                 let lh = ui::line_h(&e.f.sans, px).ceil() as i32 + 3;
                 let f = e.f.sans.clone();
                 for (i, l) in lines.iter().enumerate() {
-                    ui::text(&mut e.cv, &f, px, x0 as f32, (y + 2 + i as i32 * lh) as f32, l, *col);
+                    ui::text(
+                        &mut e.cv,
+                        &f,
+                        px,
+                        x0 as f32,
+                        (y + 2 + i as i32 * lh) as f32,
+                        l,
+                        *col,
+                    );
                 }
             }
             Row::Form(l, ctl) => {
                 let f = e.f.sans.clone();
-                ui::text_in(&mut e.cv, &f, px, Rect::new(x0, y, label_w, bh), l, c.muted, 0, 0.0);
+                ui::text_in(
+                    &mut e.cv,
+                    &f,
+                    px,
+                    Rect::new(x0, y, label_w, bh),
+                    l,
+                    c.muted,
+                    0,
+                    0.0,
+                );
                 draw_ctl(e, d, ctl, Rect::new(x0 + label_w, y, inner_w - label_w, h));
             }
             Row::Full(ctl) => draw_ctl(e, d, ctl, Rect::new(x0, y, inner_w, h)),
@@ -1870,7 +2348,11 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
                 let free = (inner_w - fixed - gaps).max(0);
                 let mut xx = x0;
                 for (ctl, s) in items {
-                    let cw2 = if *s == 0 { ctl_natural_w(e, ctl) } else { free * s / stretch.max(1) };
+                    let cw2 = if *s == 0 {
+                        ctl_natural_w(e, ctl)
+                    } else {
+                        free * s / stretch.max(1)
+                    };
                     draw_ctl(e, d, ctl, Rect::new(xx, y, cw2, h));
                     xx += cw2 + 8;
                 }
@@ -1880,7 +2362,12 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
                 let mut left = x0;
                 for (label, code, kind, at_left) in btns.iter().rev() {
                     let bw = {
-                        let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &e.f, px };
+                        let p = Paint {
+                            cv: &mut Canvas::new(1, 1),
+                            c: &c,
+                            f: &e.f,
+                            px,
+                        };
                         p.button_w(label).max(112)
                     };
                     let rr = if *at_left {
@@ -1894,7 +2381,12 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
                         rr
                     };
                     let hv = e_hover(e, Hit::D(*code));
-                    let mut p = Paint { cv: &mut e.cv, c: &c, f: &e.f, px };
+                    let mut p = Paint {
+                        cv: &mut e.cv,
+                        c: &c,
+                        f: &e.f,
+                        px,
+                    };
                     p.button(rr, label, *kind, hv, false, true, false);
                     e.hits.push((rr, Hit::D(*code)));
                 }
@@ -1915,8 +2407,26 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
                     e.cv.frame(rr, if hv { c.muted } else { c.border_strong });
                     let fb = e.f.semi.clone();
                     let fs = e.f.sans.clone();
-                    ui::text_in(&mut e.cv, &fb, px, Rect::new(rr.x + 8, rr.y + rr.h / 2 - 22, rr.w - 16, 22), a, c.fg, 1, 0.0);
-                    ui::text_in(&mut e.cv, &fs, px - 1.0, Rect::new(rr.x + 8, rr.y + rr.h / 2, rr.w - 16, 20), b, c.muted, 1, 0.0);
+                    ui::text_in(
+                        &mut e.cv,
+                        &fb,
+                        px,
+                        Rect::new(rr.x + 8, rr.y + rr.h / 2 - 22, rr.w - 16, 22),
+                        a,
+                        c.fg,
+                        1,
+                        0.0,
+                    );
+                    ui::text_in(
+                        &mut e.cv,
+                        &fs,
+                        px - 1.0,
+                        Rect::new(rr.x + 8, rr.y + rr.h / 2, rr.w - 16, 20),
+                        b,
+                        c.muted,
+                        1,
+                        0.0,
+                    );
                     e.hits.push((rr.intersect(&area), Hit::D(*code)));
                 }
                 e.cv.pop_clip_rect();
@@ -1945,7 +2455,16 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
                         e.cv.fill(rr, c.hover);
                     }
                     let col = if i == d.sel { c.on_accent } else { c.fg };
-                    ui::text_in(&mut e.cv, &f, px, Rect::new(rr.x + 8, rr.y, rr.w - 16, rr.h), it, col, 0, 0.0);
+                    ui::text_in(
+                        &mut e.cv,
+                        &f,
+                        px,
+                        Rect::new(rr.x + 8, rr.y, rr.w - 16, rr.h),
+                        it,
+                        col,
+                        0,
+                        0.0,
+                    );
                     e.hits.push((rr.intersect(&lr), Hit::DList(i)));
                 }
                 e.cv.pop_clip_rect();
@@ -1954,7 +2473,16 @@ pub fn draw(e: &mut Editor, d: &mut Dialog) {
                 let rr = Rect::new(x0, y, inner_w, h);
                 e.cv.fill(rr, 0x19C37D);
                 let f = e.f.black.clone();
-                ui::text_in(&mut e.cv, &f, px * 1.25, Rect::new(rr.x + 12, rr.y, rr.w - 24, rr.h), t, 0x04130C, 0, 0.0);
+                ui::text_in(
+                    &mut e.cv,
+                    &f,
+                    px * 1.25,
+                    Rect::new(rr.x + 12, rr.y, rr.w - 24, rr.h),
+                    t,
+                    0x04130C,
+                    0,
+                    0.0,
+                );
             }
             Row::Space(_) => {}
         }
@@ -1970,11 +2498,21 @@ fn e_hover(e: &Editor, h: Hit) -> bool {
 fn ctl_natural_w(e: &Editor, c: &Ctl) -> i32 {
     match c {
         Ctl::Btn(l, _, _) => {
-            let p = Paint { cv: &mut Canvas::new(1, 1), c: &e.c, f: &e.f, px: e.c.font_px };
+            let p = Paint {
+                cv: &mut Canvas::new(1, 1),
+                c: &e.c,
+                f: &e.f,
+                px: e.c.font_px,
+            };
             p.button_w(l).max(36)
         }
         Ctl::Check(_, l) => {
-            let p = Paint { cv: &mut Canvas::new(1, 1), c: &e.c, f: &e.f, px: e.c.font_px };
+            let p = Paint {
+                cv: &mut Canvas::new(1, 1),
+                c: &e.c,
+                f: &e.f,
+                px: e.c.font_px,
+            };
             p.check_w(l)
         }
         _ => 160,
@@ -1993,7 +2531,12 @@ fn draw_ctl(e: &mut Editor, d: &Dialog, ctl: &Ctl, r: Rect) {
             let v = d.combo_value(id);
             let en = d.combo_enabled(id);
             let hv = e.is_hover(Hit::Combo(id));
-            let mut p = Paint { cv: &mut e.cv, c: &c, f: &e.f, px };
+            let mut p = Paint {
+                cv: &mut e.cv,
+                c: &c,
+                f: &e.f,
+                px,
+            };
             p.combo(Rect::new(r.x, r.y, r.w, bh), &v, hv, false, en, false);
             if en {
                 e.hits.push((Rect::new(r.x, r.y, r.w, bh), Hit::Combo(id)));
@@ -2004,7 +2547,12 @@ fn draw_ctl(e: &mut Editor, d: &Dialog, ctl: &Ctl, r: Rect) {
             let on = d.check_value(id);
             let en = d.check_enabled(id);
             let hv = e.is_hover(Hit::Check(id));
-            let mut p = Paint { cv: &mut e.cv, c: &c, f: &e.f, px };
+            let mut p = Paint {
+                cv: &mut e.cv,
+                c: &c,
+                f: &e.f,
+                px,
+            };
             p.check(Rect::new(r.x, r.y, r.w, bh), l, on, hv, en);
             if en {
                 e.hits.push((Rect::new(r.x, r.y, r.w, bh), Hit::Check(id)));
@@ -2016,7 +2564,12 @@ fn draw_ctl(e: &mut Editor, d: &Dialog, ctl: &Ctl, r: Rect) {
             let hv = e.is_hover(Hit::Slider(id));
             let lw = 70;
             let sr = Rect::new(r.x, r.y, r.w - lw - 8, bh);
-            let mut p = Paint { cv: &mut e.cv, c: &c, f: &e.f, px };
+            let mut p = Paint {
+                cv: &mut e.cv,
+                c: &c,
+                f: &e.f,
+                px,
+            };
             p.slider(sr, lo, hi, v, hv, false);
             p.label(Rect::new(r.x + r.w - lw, r.y, lw, bh), label, c.fg);
             e.hits.push((sr, Hit::Slider(id)));
@@ -2024,7 +2577,12 @@ fn draw_ctl(e: &mut Editor, d: &Dialog, ctl: &Ctl, r: Rect) {
         Ctl::Btn(l, code, kind) => {
             let rr = Rect::new(r.x, r.y, r.w, bh);
             let hv = e.is_hover(Hit::D(*code));
-            let mut p = Paint { cv: &mut e.cv, c: &c, f: &e.f, px };
+            let mut p = Paint {
+                cv: &mut e.cv,
+                c: &c,
+                f: &e.f,
+                px,
+            };
             p.button(rr, l, *kind, hv, false, true, false);
             e.hits.push((rr, Hit::D(*code)));
         }

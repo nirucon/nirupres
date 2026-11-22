@@ -15,7 +15,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub const HINT: &str = "DOUBLE-CLICK TO EDIT  ·  CTRL+K COMMANDS  ·  F5 PRESENT  ·  ONLINE SHARES AUDIENCE";
+pub const HINT: &str =
+    "DOUBLE-CLICK TO EDIT  ·  CTRL+K COMMANDS  ·  F5 PRESENT  ·  ONLINE SHARES AUDIENCE";
 const THUMB_W: i32 = 176;
 const THUMB_H: i32 = 99;
 const ITEM_H: i32 = 135;
@@ -29,8 +30,16 @@ pub enum PopAct {
 
 #[derive(Clone, Debug)]
 pub enum Drag {
-    Slides { from: usize, start_y: i32, moved: bool },
-    Split { left: bool, start_x: i32, start_w: i32 },
+    Slides {
+        from: usize,
+        start_y: i32,
+        moved: bool,
+    },
+    Split {
+        left: bool,
+        start_x: i32,
+        start_w: i32,
+    },
     Slider(Sid, Rect),
     Text(Fid),
     ListScroll,
@@ -119,6 +128,8 @@ pub struct Editor {
     canvas_rect: RectF,
     field_rects: HashMap<Fid, Rect>,
     pub presenting: bool,
+    /// A request made from inside a text field (Enter in a dialog).
+    pub pending: Option<Request>,
     pub quit_after_present: bool,
 }
 
@@ -192,7 +203,18 @@ impl Editor {
             json!(prefs::profile_info(&profile).show_logo_default),
         );
         let (w, h) = (1540, 920);
-        let win = x.create(80, 60, w as u16, h as u16, &format!("{APP} {VERSION}"), "nirupres", "NIRUPRES", false, false, true)?;
+        let win = x.create(
+            80,
+            60,
+            w as u16,
+            h as u16,
+            &format!("{APP} {VERSION}"),
+            "nirupres",
+            "NIRUPRES",
+            false,
+            false,
+            true,
+        )?;
         x::register_window(win);
         let mut e = Self {
             win,
@@ -251,6 +273,7 @@ impl Editor {
             canvas_rect: RectF::default(),
             field_rects: HashMap::new(),
             presenting: false,
+            pending: None,
             quit_after_present: false,
         };
         e.sel.insert(0);
@@ -380,7 +403,9 @@ impl Editor {
 
     /// `select`: put the current slide's values into the fields.
     pub fn load_fields(&mut self) {
-        let Some(s) = self.current().cloned() else { return };
+        let Some(s) = self.current().cloned() else {
+            return;
+        };
         self.set_field(Fid::Title, &s_get(&s, "title", ""));
         self.set_field(Fid::Body, &s_get(&s, "body", ""));
         self.set_field(Fid::Img, &s_get(&s, "image", ""));
@@ -505,10 +530,22 @@ impl Editor {
                 let mono = s.map(|s| b_get(s, "mono")).unwrap_or(false);
                 g("imageTreatment", if mono { "MONO" } else { "NATURAL" }).to_uppercase()
             }
-            Cid::FocalX => focal_name(s.map(|s| f_get(s, "focalX", 0.5)).unwrap_or(0.5), &FOCAL_X).into(),
-            Cid::FocalY => focal_name(s.map(|s| f_get(s, "focalY", 0.5)).unwrap_or(0.5), &FOCAL_Y).into(),
-            Cid::BgFocalX => focal_name(s.map(|s| f_get(s, "backgroundFocalX", 0.5)).unwrap_or(0.5), &FOCAL_X).into(),
-            Cid::BgFocalY => focal_name(s.map(|s| f_get(s, "backgroundFocalY", 0.5)).unwrap_or(0.5), &FOCAL_Y).into(),
+            Cid::FocalX => {
+                focal_name(s.map(|s| f_get(s, "focalX", 0.5)).unwrap_or(0.5), &FOCAL_X).into()
+            }
+            Cid::FocalY => {
+                focal_name(s.map(|s| f_get(s, "focalY", 0.5)).unwrap_or(0.5), &FOCAL_Y).into()
+            }
+            Cid::BgFocalX => focal_name(
+                s.map(|s| f_get(s, "backgroundFocalX", 0.5)).unwrap_or(0.5),
+                &FOCAL_X,
+            )
+            .into(),
+            Cid::BgFocalY => focal_name(
+                s.map(|s| f_get(s, "backgroundFocalY", 0.5)).unwrap_or(0.5),
+                &FOCAL_Y,
+            )
+            .into(),
             Cid::BgMotion => g("backgroundMotion", "NONE"),
             Cid::SlideTheme => {
                 let o = g("themeOverride", "DECK");
@@ -540,9 +577,10 @@ impl Editor {
             }
             Cid::Align => g("align", "LEFT"),
             Cid::Weight => g("weight", "AUTO"),
-            Cid::SlideTransition => {
-                normalize_transition(s.and_then(|s| s.get("transition")).or(Some(&json!("DECK"))), true)
-            }
+            Cid::SlideTransition => normalize_transition(
+                s.and_then(|s| s.get("transition")).or(Some(&json!("DECK"))),
+                true,
+            ),
             Cid::D(_) => self
                 .dialog
                 .as_ref()
@@ -572,7 +610,10 @@ impl Editor {
                 self.deck_changed();
             }
             Cid::Font => {
-                self.data.insert("fontFamily".into(), json!(if v.is_empty() { "Noto Sans".into() } else { v }));
+                self.data.insert(
+                    "fontFamily".into(),
+                    json!(if v.is_empty() { "Noto Sans".into() } else { v }),
+                );
                 self.deck_changed();
             }
             Cid::Ratio => {
@@ -668,11 +709,19 @@ impl Editor {
             Kid::Autoplay => self.slide_set("videoAutoplay", json!(on)),
             Kid::Muted => self.slide_set("videoMuted", json!(on)),
             Kid::OverrideTheme => {
-                let t = if on { s_get(&self.data, "theme", "B&W") } else { "DECK".into() };
+                let t = if on {
+                    s_get(&self.data, "theme", "B&W")
+                } else {
+                    "DECK".into()
+                };
                 self.slide_set("themeOverride", json!(t));
             }
             Kid::OverrideFont => {
-                let t = if on { s_get(&self.data, "fontFamily", "Noto Sans") } else { "DECK".into() };
+                let t = if on {
+                    s_get(&self.data, "fontFamily", "Noto Sans")
+                } else {
+                    "DECK".into()
+                };
                 self.slide_set("fontFamily", json!(t));
             }
             Kid::Hidden => self.slide_set("hidden", json!(on)),
@@ -736,7 +785,11 @@ impl Editor {
     }
 
     fn scroll_to_current(&mut self) {
-        let ih = if self.outline { OUTLINE_H + 5 } else { ITEM_H + 5 };
+        let ih = if self.outline {
+            OUTLINE_H + 5
+        } else {
+            ITEM_H + 5
+        };
         let top = self.cur as i32 * ih;
         let view = (self.cv.h - 200).max(ih);
         if top < self.list_scroll {
@@ -748,7 +801,12 @@ impl Editor {
     }
 
     fn selected_rows(&self) -> Vec<usize> {
-        let mut v: Vec<usize> = self.sel.iter().copied().filter(|&i| i < self.slides().len()).collect();
+        let mut v: Vec<usize> = self
+            .sel
+            .iter()
+            .copied()
+            .filter(|&i| i < self.slides().len())
+            .collect();
         if v.is_empty() {
             v.push(self.cur);
         }
@@ -762,9 +820,19 @@ impl Editor {
     pub fn slide_accessible_text(&self, i: usize) -> String {
         let n = self.slides().len();
         let s = self.slides().get(i).and_then(|v| v.as_object());
-        let title = s.map(|s| crate::markup::plain(&s_get(s, "title", ""))).unwrap_or_default();
-        let title = if title.is_empty() { "untitled".to_string() } else { title };
-        let hidden = if s.is_some_and(|s| b_get(s, "hidden")) { ", hidden" } else { "" };
+        let title = s
+            .map(|s| crate::markup::plain(&s_get(s, "title", "")))
+            .unwrap_or_default();
+        let title = if title.is_empty() {
+            "untitled".to_string()
+        } else {
+            title
+        };
+        let hidden = if s.is_some_and(|s| b_get(s, "hidden")) {
+            ", hidden"
+        } else {
+            ""
+        };
         let layout = s.map(|s| s_get(s, "layout", "TITLE")).unwrap_or_default();
         format!("Slide {} of {n}: {title} ({layout}{hidden})", i + 1)
     }
@@ -791,7 +859,10 @@ impl Editor {
             let mut cv = Canvas::new(THUMB_W, THUMB_H);
             cv.fill(cv.bounds(), 0x0b0b0b);
             let ctx = Ctx::new(&style, i, false);
-            let r = render::aspect_rect(RectF::new(0.0, 0.0, THUMB_W as f32, THUMB_H as f32), &s_get(&self.data, "aspect", "16:9"));
+            let r = render::aspect_rect(
+                RectF::new(0.0, 0.0, THUMB_W as f32, THUMB_H as f32),
+                &s_get(&self.data, "aspect", "16:9"),
+            );
             {
                 let mut p = RasterPainter { cv: &mut cv };
                 render::render_slide(&mut p, r, &s, &ctx);
@@ -832,11 +903,25 @@ impl Editor {
             _ => false,
         };
         let enabled = !(a == Act::ChromeToggle && !self.chrome_available);
-        let mut p = Paint { cv: &mut self.cv, c: &self.c, f: &self.f, px: self.c.font_px };
+        let mut p = Paint {
+            cv: &mut self.cv,
+            c: &self.c,
+            f: &self.f,
+            px: self.c.font_px,
+        };
         p.button(r, label, kind, hv, false, enabled, checked);
         if matches!(a, Act::ExportMenu | Act::TalkMenu | Act::PresetsMenu) {
-            let col = if kind == BtnKind::Primary { self.c.on_accent } else { self.c.fg };
-            let mut p = Paint { cv: &mut self.cv, c: &self.c, f: &self.f, px: self.c.font_px };
+            let col = if kind == BtnKind::Primary {
+                self.c.on_accent
+            } else {
+                self.c.fg
+            };
+            let mut p = Paint {
+                cv: &mut self.cv,
+                c: &self.c,
+                f: &self.f,
+                px: self.c.font_px,
+            };
             p.chevron(r.x + r.w - 14, r.y + r.h / 2 - 1, col);
         }
         if enabled {
@@ -852,7 +937,12 @@ impl Editor {
         let en = self.combo_enabled(id);
         let open = self.popup_owner == Some(Hit::Combo(id));
         let hv = self.hov(Hit::Combo(id));
-        let mut p = Paint { cv: &mut self.cv, c: &self.c, f: &self.f, px: self.c.font_px };
+        let mut p = Paint {
+            cv: &mut self.cv,
+            c: &self.c,
+            f: &self.f,
+            px: self.c.font_px,
+        };
         p.combo(r, &v, hv, false, en, open);
         if en {
             self.hit(r, Hit::Combo(id));
@@ -863,7 +953,12 @@ impl Editor {
         let on = self.check_value(id);
         let en = self.check_enabled(id);
         let hv = self.hov(Hit::Check(id));
-        let mut p = Paint { cv: &mut self.cv, c: &self.c, f: &self.f, px: self.c.font_px };
+        let mut p = Paint {
+            cv: &mut self.cv,
+            c: &self.c,
+            f: &self.f,
+            px: self.c.font_px,
+        };
         p.check(r, label, on, hv, en);
         if en {
             self.hit(r, Hit::Check(id));
@@ -872,8 +967,14 @@ impl Editor {
 
     fn slider(&mut self, r: Rect, id: Sid) {
         let (lo, hi, v) = self.slider_def(id);
-        let hv = self.hov(Hit::Slider(id)) || matches!(self.drag, Some(Drag::Slider(s, _)) if s == id);
-        let mut p = Paint { cv: &mut self.cv, c: &self.c, f: &self.f, px: self.c.font_px };
+        let hv =
+            self.hov(Hit::Slider(id)) || matches!(self.drag, Some(Drag::Slider(s, _)) if s == id);
+        let mut p = Paint {
+            cv: &mut self.cv,
+            c: &self.c,
+            f: &self.f,
+            px: self.c.font_px,
+        };
         p.slider(r, lo, hi, v, hv, false);
         self.hit(r, Hit::Slider(id));
     }
@@ -889,7 +990,14 @@ impl Editor {
         } else {
             c.border
         };
-        self.cv.fill(r, if focused { blend(c.input, c.fg, 0.01) } else { c.input });
+        self.cv.fill(
+            r,
+            if focused {
+                blend(c.input, c.fg, 0.01)
+            } else {
+                c.input
+            },
+        );
         self.cv.frame(r, border);
         self.field_rects.insert(id, r);
         self.hit(r, Hit::Field(id));
@@ -900,8 +1008,20 @@ impl Editor {
         let lh = ui::line_h(&face, px).ceil();
         self.cv.push_clip_rect(inner);
         if e.text.is_empty() && !placeholder.is_empty() {
-            let y = if id.multiline() { inner.y as f32 } else { inner.y as f32 + (inner.h as f32 - lh) / 2.0 };
-            ui::text(&mut self.cv, &face, px, inner.x as f32, y, placeholder, blend(c.input, c.muted, 0.55));
+            let y = if id.multiline() {
+                inner.y as f32
+            } else {
+                inner.y as f32 + (inner.h as f32 - lh) / 2.0
+            };
+            ui::text(
+                &mut self.cv,
+                &face,
+                px,
+                inner.x as f32,
+                y,
+                placeholder,
+                blend(c.input, c.muted, 0.55),
+            );
         }
         if id.multiline() {
             let lay = ui::area_layout(&face, px, &e.text, inner.w as f32);
@@ -928,7 +1048,15 @@ impl Editor {
                     let x0: f32 = lay.adv[*a..sa.max(*a)].iter().sum();
                     let x1: f32 = lay.adv[*a..sb.min(*b)].iter().sum();
                     let extra = if sb > *b { 5.0 } else { 0.0 };
-                    self.cv.fill(Rect::new(inner.x + x0 as i32, y as i32, (x1 - x0 + extra).ceil() as i32, lay.line_h as i32), 0xeeeeee.min(c.focus.max(0x555555)));
+                    self.cv.fill(
+                        Rect::new(
+                            inner.x + x0 as i32,
+                            y as i32,
+                            (x1 - x0 + extra).ceil() as i32,
+                            lay.line_h as i32,
+                        ),
+                        0xeeeeee.min(c.focus.max(0x555555)),
+                    );
                 }
                 let s: String = e.text[*a..*b].iter().collect();
                 ui::text(&mut self.cv, &face, px, inner.x as f32, y, &s, c.fg);
@@ -937,7 +1065,10 @@ impl Editor {
                 let l = lay.line_of(e.cur);
                 let x = lay.x_of(e.cur);
                 let y = inner.y as f32 + l as f32 * lay.line_h - scroll;
-                self.cv.fill(Rect::new(inner.x + x as i32, y as i32 + 1, 1, lay.line_h as i32 - 2), c.fg);
+                self.cv.fill(
+                    Rect::new(inner.x + x as i32, y as i32 + 1, 1, lay.line_h as i32 - 2),
+                    c.fg,
+                );
             }
         } else {
             let s: String = e.text.iter().collect();
@@ -959,11 +1090,30 @@ impl Editor {
                 let (a, b) = e.sel();
                 let xa = ui::text_w(&face, px, &e.text[..a].iter().collect::<String>(), 0.0);
                 let xb = ui::text_w(&face, px, &e.text[..b].iter().collect::<String>(), 0.0);
-                self.cv.fill(Rect::new(inner.x + (xa - scroll) as i32, y as i32, (xb - xa).ceil() as i32, lh as i32), c.focus.max(0x555555));
+                self.cv.fill(
+                    Rect::new(
+                        inner.x + (xa - scroll) as i32,
+                        y as i32,
+                        (xb - xa).ceil() as i32,
+                        lh as i32,
+                    ),
+                    c.focus.max(0x555555),
+                );
             }
-            ui::text(&mut self.cv, &face, px, inner.x as f32 - scroll, y, &s, c.fg);
+            ui::text(
+                &mut self.cv,
+                &face,
+                px,
+                inner.x as f32 - scroll,
+                y,
+                &s,
+                c.fg,
+            );
             if focused {
-                self.cv.fill(Rect::new(inner.x + (cx - scroll) as i32, y as i32, 1, lh as i32), c.fg);
+                self.cv.fill(
+                    Rect::new(inner.x + (cx - scroll) as i32, y as i32, 1, lh as i32),
+                    c.fg,
+                );
             }
         }
         self.cv.pop_clip_rect();
@@ -990,13 +1140,17 @@ impl Editor {
         if self.left_visible {
             let lw = self.left_w.clamp(200, (w / 3).max(200));
             self.draw_left(Rect::new(0, body.y, lw, body.h));
-            self.cv.fill(Rect::new(lw, body.y, 1, body.h), 0x181818.max(c.border));
+            self.cv
+                .fill(Rect::new(lw, body.y, 1, body.h), 0x181818.max(c.border));
             self.hit(Rect::new(lw - 2, body.y, 5, body.h), Hit::SplitLeft);
             x0 = lw + 1;
         }
         if self.right_visible {
             let rw = self.right_w.clamp(300, (w / 2).max(300));
-            self.cv.fill(Rect::new(w - rw - 1, body.y, 1, body.h), 0x181818.max(c.border));
+            self.cv.fill(
+                Rect::new(w - rw - 1, body.y, 1, body.h),
+                0x181818.max(c.border),
+            );
             self.hit(Rect::new(w - rw - 3, body.y, 5, body.h), Hit::SplitRight);
             self.draw_inspector(Rect::new(w - rw, body.y, rw, body.h));
             x1 = w - rw - 1;
@@ -1023,7 +1177,9 @@ impl Editor {
     }
 
     fn toolbar_items(&self) -> Vec<(&'static str, Vec<(String, Act, BtnKind, &'static str, i32)>)> {
-        let b = |s: &str, a: Act, k: BtnKind, t: &'static str, minw: i32| (s.to_string(), a, k, t, minw);
+        let b = |s: &str, a: Act, k: BtnKind, t: &'static str, minw: i32| {
+            (s.to_string(), a, k, t, minw)
+        };
         let n = BtnKind::Normal;
         let aux = BtnKind::Aux;
         vec![
@@ -1065,16 +1221,26 @@ impl Editor {
         let bh = (ui::line_h(&self.f.sans, px).ceil() as i32 + 16).max(32);
         let th = bh + 12;
         self.cv.fill(Rect::new(0, 0, w, th), c.toolbar);
-        self.cv.fill(Rect::new(0, th - 1, w, 1), blend(c.border, c.bg, 0.2));
+        self.cv
+            .fill(Rect::new(0, th - 1, w, 1), blend(c.border, c.bg, 0.2));
         let groups = self.toolbar_items();
         let widths: Vec<(&str, i32)> = groups
             .iter()
             .map(|(name, items)| {
-                let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &self.f, px };
+                let p = Paint {
+                    cv: &mut Canvas::new(1, 1),
+                    c: &c,
+                    f: &self.f,
+                    px,
+                };
                 let wsum: i32 = items
                     .iter()
                     .map(|(l, a, _, _, m)| {
-                        let extra = if matches!(a, Act::ExportMenu | Act::TalkMenu) { 20 } else { 0 };
+                        let extra = if matches!(a, Act::ExportMenu | Act::TalkMenu) {
+                            20
+                        } else {
+                            0
+                        };
                         (p.button_w(l) + extra).max(*m) + 4
                     })
                     .sum();
@@ -1089,7 +1255,11 @@ impl Editor {
                 break;
             }
             hidden.push(name);
-            need -= widths.iter().find(|(n, _)| *n == name).map(|(_, w)| *w).unwrap_or(0);
+            need -= widths
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, w)| *w)
+                .unwrap_or(0);
             need += 50;
         }
         self.toolbar_hidden = hidden.clone();
@@ -1101,25 +1271,45 @@ impl Editor {
                 continue;
             }
             if !first {
-                self.cv.fill(Rect::new(x + 3, y + 5, 1, bh - 10), c.border_strong);
+                self.cv
+                    .fill(Rect::new(x + 3, y + 5, 1, bh - 10), c.border_strong);
                 x += 11;
             }
             first = false;
             for (label, a, kind, tip, minw) in items {
-                let extra = if matches!(a, Act::ExportMenu | Act::TalkMenu) { 20 } else { 0 };
+                let extra = if matches!(a, Act::ExportMenu | Act::TalkMenu) {
+                    20
+                } else {
+                    0
+                };
                 let bw = {
-                    let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &self.f, px };
+                    let p = Paint {
+                        cv: &mut Canvas::new(1, 1),
+                        c: &c,
+                        f: &self.f,
+                        px,
+                    };
                     (p.button_w(&label) + extra).max(minw)
                 };
                 let r = Rect::new(x, y, bw, bh);
-                let label = if extra > 0 { format!("{label}   ") } else { label };
+                let label = if extra > 0 {
+                    format!("{label}   ")
+                } else {
+                    label
+                };
                 self.btn(r, &label, a, kind, tip);
                 x += bw + 4;
             }
         }
         if !hidden.is_empty() {
             x += 7;
-            self.btn(Rect::new(x, y, 40, bh), "⋯", Act::Overflow, BtnKind::Normal, "More toolbar actions");
+            self.btn(
+                Rect::new(x, y, 40, bh),
+                "⋯",
+                Act::Overflow,
+                BtnKind::Normal,
+                "More toolbar actions",
+            );
         }
         th
     }
@@ -1132,24 +1322,60 @@ impl Editor {
         let hy = r.y + pad;
         let n = self.slides().len();
         {
-            let mut p = Paint { cv: &mut self.cv, c: &c, f: &self.f, px };
+            let mut p = Paint {
+                cv: &mut self.cv,
+                c: &c,
+                f: &self.f,
+                px,
+            };
             p.label(Rect::new(r.x + pad, hy, 80, bh), "SLIDES", c.muted);
         }
         let ow = {
-            let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &self.f, px };
+            let p = Paint {
+                cv: &mut Canvas::new(1, 1),
+                c: &c,
+                f: &self.f,
+                px,
+            };
             p.button_w("OUTLINE").max(72)
         };
         let collapse = Rect::new(r.x + r.w - 6 - 28, hy, 28, bh);
         let outline = Rect::new(collapse.x - 4 - ow, hy, ow, bh);
         {
-            let mut p = Paint { cv: &mut self.cv, c: &c, f: &self.f, px };
+            let mut p = Paint {
+                cv: &mut self.cv,
+                c: &c,
+                f: &self.f,
+                px,
+            };
             let cnt = n.to_string();
             let cw = ui::text_w(&self.f.sans, px, &cnt, 0.0).ceil() as i32;
-            p.label(Rect::new(outline.x - 10 - cw, hy, cw + 2, bh), &cnt, c.muted);
+            p.label(
+                Rect::new(outline.x - 10 - cw, hy, cw + 2, bh),
+                &cnt,
+                c.muted,
+            );
         }
-        self.btn(outline, "OUTLINE", Act::ToggleOutline, BtnKind::Normal, "Switch between slide thumbnails and compact outline");
-        self.btn(collapse, "‹", Act::HideLeft, BtnKind::Normal, "Hide Slides panel");
-        let list = Rect::new(r.x + pad, hy + bh + 8, r.w - pad - 6, r.h - (bh + 8) - pad * 2 - 2 * (bh + 6));
+        self.btn(
+            outline,
+            "OUTLINE",
+            Act::ToggleOutline,
+            BtnKind::Normal,
+            "Switch between slide thumbnails and compact outline",
+        );
+        self.btn(
+            collapse,
+            "‹",
+            Act::HideLeft,
+            BtnKind::Normal,
+            "Hide Slides panel",
+        );
+        let list = Rect::new(
+            r.x + pad,
+            hy + bh + 8,
+            r.w - pad - 6,
+            r.h - (bh + 8) - pad * 2 - 2 * (bh + 6),
+        );
         self.cv.fill(list, c.input);
         self.cv.frame(list, c.border);
         self.hit(list, Hit::SlideList);
@@ -1171,7 +1397,10 @@ impl Editor {
                 self.cv.fill(row, blend(c.input, c.fg, 0.04));
                 self.cv.frame(row, c.focus.min(0x777777).max(c.focus));
             }
-            if let Some(Drag::Slides { from, moved: true, .. }) = &self.drag {
+            if let Some(Drag::Slides {
+                from, moved: true, ..
+            }) = &self.drag
+            {
                 if *from != i && self.mouse.1 >= iy && self.mouse.1 < iy + step {
                     self.cv.fill(Rect::new(row.x, iy - 3, row.w, 2), c.fg);
                 }
@@ -1187,11 +1416,37 @@ impl Editor {
                 if truthy(s.get("imageRequest")) {
                     flags.push_str("  [IMAGE?]");
                 }
-                let t1 = format!("{:02}  {}", i + 1, if title.is_empty() { "(untitled)" } else { &title });
+                let t1 = format!(
+                    "{:02}  {}",
+                    i + 1,
+                    if title.is_empty() {
+                        "(untitled)"
+                    } else {
+                        &title
+                    }
+                );
                 let t2 = format!("     {}{flags}", s_get(&s, "layout", "TITLE"));
                 let face = self.f.sans.clone();
-                ui::text_in(&mut self.cv, &face, px, Rect::new(row.x + 6, row.y + 4, row.w - 12, 22), &t1, c.fg, 0, 0.0);
-                ui::text_in(&mut self.cv, &face, px, Rect::new(row.x + 6, row.y + 26, row.w - 12, 20), &t2, c.muted, 0, 0.0);
+                ui::text_in(
+                    &mut self.cv,
+                    &face,
+                    px,
+                    Rect::new(row.x + 6, row.y + 4, row.w - 12, 22),
+                    &t1,
+                    c.fg,
+                    0,
+                    0.0,
+                );
+                ui::text_in(
+                    &mut self.cv,
+                    &face,
+                    px,
+                    Rect::new(row.x + 6, row.y + 26, row.w - 12, 20),
+                    &t2,
+                    c.muted,
+                    0,
+                    0.0,
+                );
             } else {
                 let tx = row.x + 4;
                 let ty = row.y + 4;
@@ -1203,7 +1458,12 @@ impl Editor {
                     let src = &t.cv;
                     let dst = RectF::new(tx as f32, ty as f32, THUMB_W as f32, THUMB_H as f32);
                     // Copy the cached thumbnail.
-                    self.cv.draw_canvas(src, RectF::new(0.0, 0.0, THUMB_W as f32, THUMB_H as f32), dst, 255);
+                    self.cv.draw_canvas(
+                        src,
+                        RectF::new(0.0, 0.0, THUMB_W as f32, THUMB_H as f32),
+                        dst,
+                        255,
+                    );
                 }
                 if !issues.is_empty() {
                     let bf = self.f.black.clone();
@@ -1229,24 +1489,52 @@ impl Editor {
                 if !issues.is_empty() {
                     flags.push_str("  ⚠");
                 }
-                let name = if title.is_empty() { s_get(&s, "layout", "") } else { title };
+                let name = if title.is_empty() {
+                    s_get(&s, "layout", "")
+                } else {
+                    title
+                };
                 let short: String = name.chars().take(20).collect();
                 let label = format!("{:02}  {short}{flags}", i + 1);
                 let face = self.f.sans.clone();
-                ui::text_in(&mut self.cv, &face, 10.0, Rect::new(tx, ty + THUMB_H + 3, row.w - 8, 18), &label, 0xaaaaaa.min(c.muted.max(0x888888)), 0, 0.0);
+                ui::text_in(
+                    &mut self.cv,
+                    &face,
+                    10.0,
+                    Rect::new(tx, ty + THUMB_H + 3, row.w - 8, 18),
+                    &label,
+                    0xaaaaaa.min(c.muted.max(0x888888)),
+                    0,
+                    0.0,
+                );
             }
             i += 1;
         }
         self.cv.pop_clip_rect();
         if max_scroll > 0 {
             let track = Rect::new(list.x + list.w - 5, list.y + 2, 3, list.h - 4);
-            let th = ((list.h as f32 / (max_scroll + list.h) as f32) * track.h as f32).max(20.0) as i32;
-            let ty = track.y + ((self.list_scroll as f32 / max_scroll as f32) * (track.h - th) as f32) as i32;
-            self.cv.fill(Rect::new(track.x, ty, track.w, th), c.border_strong);
+            let th =
+                ((list.h as f32 / (max_scroll + list.h) as f32) * track.h as f32).max(20.0) as i32;
+            let ty = track.y
+                + ((self.list_scroll as f32 / max_scroll as f32) * (track.h - th) as f32) as i32;
+            self.cv
+                .fill(Rect::new(track.x, ty, track.w, th), c.border_strong);
         }
         let by = list.y + list.h + 6;
-        self.btn(Rect::new(r.x + pad, by, r.w - pad - 6, bh), "+ ADD SLIDE", Act::AddSlide, BtnKind::Normal, "");
-        self.btn(Rect::new(r.x + pad, by + bh + 6, r.w - pad - 6, bh), "PRESETS", Act::PresetsMenu, BtnKind::Normal, "Insert a ready-made slide pattern");
+        self.btn(
+            Rect::new(r.x + pad, by, r.w - pad - 6, bh),
+            "+ ADD SLIDE",
+            Act::AddSlide,
+            BtnKind::Normal,
+            "",
+        );
+        self.btn(
+            Rect::new(r.x + pad, by + bh + 6, r.w - pad - 6, bh),
+            "PRESETS",
+            Act::PresetsMenu,
+            BtnKind::Normal,
+            "Insert a ready-made slide pattern",
+        );
     }
 
     fn draw_center(&mut self, r: Rect) {
@@ -1257,21 +1545,57 @@ impl Editor {
         let w = r.w - 24;
         let mut y = r.y + 10;
         let pw = |e: &Self, s: &str| {
-            let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &e.f, px };
+            let p = Paint {
+                cv: &mut Canvas::new(1, 1),
+                c: &c,
+                f: &e.f,
+                px,
+            };
             p.button_w(s)
         };
         // Header: SLIDES, recent files, the document, INSPECTOR.
         let sw = pw(self, "SLIDES").max(70);
-        self.btn(Rect::new(x0, y, sw, bh), "SLIDES", Act::ToggleLeft, BtnKind::Normal, if self.left_visible { "Hide Slides panel" } else { "Show Slides panel" });
+        self.btn(
+            Rect::new(x0, y, sw, bh),
+            "SLIDES",
+            Act::ToggleLeft,
+            BtnKind::Normal,
+            if self.left_visible {
+                "Hide Slides panel"
+            } else {
+                "Show Slides panel"
+            },
+        );
         self.combo(Rect::new(x0 + sw + 8, y, 170, bh), Cid::Recent);
-        self.tipz(Rect::new(x0 + sw + 8, y, 170, bh), "Open a recent presentation");
+        self.tipz(
+            Rect::new(x0 + sw + 8, y, 170, bh),
+            "Open a recent presentation",
+        );
         let iw = pw(self, "INSPECTOR").max(86);
-        self.btn(Rect::new(x0 + w - iw, y, iw, bh), "INSPECTOR", Act::ToggleRight, BtnKind::Normal, if self.right_visible { "Hide Inspector panel" } else { "Show Inspector panel" });
+        self.btn(
+            Rect::new(x0 + w - iw, y, iw, bh),
+            "INSPECTOR",
+            Act::ToggleRight,
+            BtnKind::Normal,
+            if self.right_visible {
+                "Hide Inspector panel"
+            } else {
+                "Show Inspector panel"
+            },
+        );
         let (display, tip) = match &self.path {
-            Some(p) => (p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), p.display().to_string()),
+            Some(p) => (
+                p.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                p.display().to_string(),
+            ),
             None => {
                 let t = s_get(&self.data, "title", "Untitled");
-                (if t.is_empty() { "Untitled".into() } else { t }, "Unsaved presentation".into())
+                (
+                    if t.is_empty() { "Untitled".into() } else { t },
+                    "Unsaved presentation".into(),
+                )
             }
         };
         let df = self.f.bold.clone();
@@ -1280,16 +1604,60 @@ impl Editor {
         let dw = ui::text_w(&df, 12.0, &label, 0.5).ceil() as i32 + 30;
         let dr = Rect::new(x0 + (w - dw) / 2, y + 2, dw, bh - 4);
         let hv = self.hov(Hit::Act(Act::DocTitle));
-        self.cv.round_rect(dr, 3, if hv { blend(c.border, c.fg, 0.2) } else { c.border });
-        self.cv.round_rect(dr.inset(1), 3, if hv { blend(c.toolbar, c.fg, 0.03) } else { c.toolbar });
-        ui::text_in(&mut self.cv, &df, 12.0, dr, &label, if hv { 0xffffff.min(c.fg.max(0xdddddd)) } else { blend(c.fg, c.bg, 0.05) }, 1, 0.5);
+        self.cv.round_rect(
+            dr,
+            3,
+            if hv {
+                blend(c.border, c.fg, 0.2)
+            } else {
+                c.border
+            },
+        );
+        self.cv.round_rect(
+            dr.inset(1),
+            3,
+            if hv {
+                blend(c.toolbar, c.fg, 0.03)
+            } else {
+                c.toolbar
+            },
+        );
+        ui::text_in(
+            &mut self.cv,
+            &df,
+            12.0,
+            dr,
+            &label,
+            if hv {
+                0xffffff.min(c.fg.max(0xdddddd))
+            } else {
+                blend(c.fg, c.bg, 0.05)
+            },
+            1,
+            0.5,
+        );
         self.hit(dr, Hit::Act(Act::DocTitle));
-        self.tipz(dr, &format!("{tip}{} · click for deck settings", if self.dirty { " · unsaved changes" } else { "" }));
+        self.tipz(
+            dr,
+            &format!(
+                "{tip}{} · click for deck settings",
+                if self.dirty {
+                    " · unsaved changes"
+                } else {
+                    ""
+                }
+            ),
+        );
         y += bh + 8;
         // Deck controls.
         let mut xx = x0;
         let cap = |e: &mut Self, x: i32, y: i32, s: &str| -> i32 {
-            let mut p = Paint { cv: &mut e.cv, c: &c, f: &e.f, px };
+            let mut p = Paint {
+                cv: &mut e.cv,
+                c: &c,
+                f: &e.f,
+                px,
+            };
             let cw = p.cap_w(s);
             p.cap(Rect::new(x, y, cw, bh), s);
             cw
@@ -1313,15 +1681,31 @@ impl Editor {
         let mut xx = x0;
         xx += cap(self, xx, y, "TRANSITION") + 10;
         self.combo(Rect::new(xx, y, 140, bh), Cid::Transition);
-        self.tipz(Rect::new(xx, y, 140, bh), "Audience transition: NONE, FADE, MORPH or REVEAL");
+        self.tipz(
+            Rect::new(xx, y, 140, bh),
+            "Audience transition: NONE, FADE, MORPH or REVEAL",
+        );
         xx += 140 + 18;
         for (id, label, tip) in [
-            (Kid::Numbers, "NUMBERS", "Show slide numbers on audience output"),
-            (Kid::Guides, "GUIDES", "Show editor alignment guides · never shown to audience"),
+            (
+                Kid::Numbers,
+                "NUMBERS",
+                "Show slide numbers on audience output",
+            ),
+            (
+                Kid::Guides,
+                "GUIDES",
+                "Show editor alignment guides · never shown to audience",
+            ),
             (Kid::Logo, "LOGO", self.profile_info().logo_tooltip),
         ] {
             let cw = {
-                let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &self.f, px };
+                let p = Paint {
+                    cv: &mut Canvas::new(1, 1),
+                    c: &c,
+                    f: &self.f,
+                    px,
+                };
                 p.check_w(label)
             };
             self.check(Rect::new(xx, y, cw, bh), id, label);
@@ -1333,16 +1717,38 @@ impl Editor {
         xx += cap(self, xx, y, "FOOTER") + 8;
         let dsw = pw(self, "DECK SETTINGS…");
         let ph = self.profile_info().footer_placeholder;
-        self.field_draw(Rect::new(xx, y, x0 + w - dsw - 12 - xx, bh), Fid::Footer, ph);
-        self.tipz(Rect::new(xx, y, x0 + w - dsw - 12 - xx, bh), "Optional deck footer · alignment and size are available in Deck Settings");
-        self.btn(Rect::new(x0 + w - dsw, y, dsw, bh), "DECK SETTINGS…", Act::DeckSettings, BtnKind::Normal, "Open all deck-level settings in one dialog");
+        self.field_draw(
+            Rect::new(xx, y, x0 + w - dsw - 12 - xx, bh),
+            Fid::Footer,
+            ph,
+        );
+        self.tipz(
+            Rect::new(xx, y, x0 + w - dsw - 12 - xx, bh),
+            "Optional deck footer · alignment and size are available in Deck Settings",
+        );
+        self.btn(
+            Rect::new(x0 + w - dsw, y, dsw, bh),
+            "DECK SETTINGS…",
+            Act::DeckSettings,
+            BtnKind::Normal,
+            "Open all deck-level settings in one dialog",
+        );
         y += bh + 10;
         // The slide.
         let hint_h = 24;
         let view = Rect::new(x0, y, w, r.y + r.h - 10 - hint_h - y);
         self.draw_slide_view(view);
         let mf = self.f.mono.clone();
-        ui::text_in(&mut self.cv, &mf, 10.0, Rect::new(x0, view.y + view.h + 6, w, hint_h - 6), HINT, 0x666666.min(c.label.max(0x555555)), 0, 0.0);
+        ui::text_in(
+            &mut self.cv,
+            &mf,
+            10.0,
+            Rect::new(x0, view.y + view.h + 6, w, hint_h - 6),
+            HINT,
+            0x666666.min(c.label.max(0x555555)),
+            0,
+            0.0,
+        );
     }
 
     fn draw_slide_view(&mut self, view: Rect) {
@@ -1354,7 +1760,8 @@ impl Editor {
         let r = render::aspect_rect(view.f(), &aspect);
         self.canvas_rect = r;
         self.hit(view, Hit::Canvas);
-        self.cv.fill_aa(r.adjusted(-1.0, -1.0, 1.0, 1.0), Rgba::hex(0x2A2A2A));
+        self.cv
+            .fill_aa(r.adjusted(-1.0, -1.0, 1.0, 1.0), Rgba::hex(0x2A2A2A));
         let style = self.style();
         let ctx = Ctx::new(&style, self.cur, style.show_numbers);
         if let Some(s) = self.current().cloned() {
@@ -1378,7 +1785,9 @@ impl Editor {
     }
 
     fn summary(&self, section: &str) -> String {
-        let Some(s) = self.current() else { return String::new() };
+        let Some(s) = self.current() else {
+            return String::new();
+        };
         let focal = |xk: &str, yk: &str| {
             let fx = match f_get(s, xk, 0.5) {
                 v if v == 0.0 => "left",
@@ -1401,7 +1810,11 @@ impl Editor {
         match section {
             "CONTENT" => {
                 let t = s_get(s, "title", "");
-                let t = if t.trim().is_empty() { "untitled".to_string() } else { t.trim().to_string() };
+                let t = if t.trim().is_empty() {
+                    "untitled".to_string()
+                } else {
+                    t.trim().to_string()
+                };
                 format!("{} · {t}", s_get(s, "layout", "TITLE").to_lowercase())
             }
             "IMAGE" => {
@@ -1432,7 +1845,12 @@ impl Editor {
                     return "none".into();
                 }
                 let l = src.trim().to_lowercase();
-                let mut parts = vec![if l.starts_with("http://") || l.starts_with("https://") { "web" } else { "local" }.to_string()];
+                let mut parts = vec![if l.starts_with("http://") || l.starts_with("https://") {
+                    "web"
+                } else {
+                    "local"
+                }
+                .to_string()];
                 if b_get(s, "videoAutoplay") {
                     parts.push("autoplay".into());
                 }
@@ -1444,7 +1862,11 @@ impl Editor {
             "STYLE" => {
                 let ov = s_get(s, "themeOverride", "DECK");
                 let mut parts = vec![
-                    if ov == "DECK" { "deck theme".into() } else { ov.to_lowercase() },
+                    if ov == "DECK" {
+                        "deck theme".into()
+                    } else {
+                        ov.to_lowercase()
+                    },
                     s_get(s, "align", "LEFT").to_lowercase(),
                 ];
                 let ff = s_get(s, "fontFamily", "DECK");
@@ -1458,12 +1880,21 @@ impl Editor {
                 parts.join(" · ")
             }
             "PRESENTATION" => {
-                let mut parts = vec![if b_get(s, "hidden") { "hidden" } else { "shown" }.to_string()];
+                let mut parts = vec![if b_get(s, "hidden") {
+                    "hidden"
+                } else {
+                    "shown"
+                }
+                .to_string()];
                 if !s_get(s, "notes", "").trim().is_empty() {
                     parts.push("notes".into());
                 }
                 let t = normalize_transition(s.get("transition").or(Some(&json!("DECK"))), true);
-                parts.push(if t == "DECK" { "deck transition".into() } else { t.to_lowercase() });
+                parts.push(if t == "DECK" {
+                    "deck transition".into()
+                } else {
+                    t.to_lowercase()
+                });
                 parts.join(" · ")
             }
             _ => String::new(),
@@ -1476,11 +1907,27 @@ impl Editor {
         let bh = (ui::line_h(&self.f.sans, px).ceil() as i32 + 14).max(30);
         let pad = 10;
         {
-            let mut p = Paint { cv: &mut self.cv, c: &c, f: &self.f, px };
+            let mut p = Paint {
+                cv: &mut self.cv,
+                c: &c,
+                f: &self.f,
+                px,
+            };
             p.label(Rect::new(r.x + 6, r.y + pad, 120, bh), "INSPECTOR", c.muted);
         }
-        self.btn(Rect::new(r.x + r.w - pad - 28, r.y + pad, 28, bh), "›", Act::HideRight, BtnKind::Normal, "Hide Inspector panel");
-        let area = Rect::new(r.x + 6, r.y + pad + bh + 6, r.w - 6 - pad, r.h - pad * 2 - bh - 6);
+        self.btn(
+            Rect::new(r.x + r.w - pad - 28, r.y + pad, 28, bh),
+            "›",
+            Act::HideRight,
+            BtnKind::Normal,
+            "Hide Inspector panel",
+        );
+        let area = Rect::new(
+            r.x + 6,
+            r.y + pad + bh + 6,
+            r.w - 6 - pad,
+            r.h - pad * 2 - bh - 6,
+        );
         self.hit(area, Hit::Inspector);
         let max_scroll = (self.insp_content_h - area.h).max(0);
         self.insp_scroll = self.insp_scroll.clamp(0, max_scroll);
@@ -1498,14 +1945,20 @@ impl Editor {
             // Section header with a rule and, when collapsed, the summary.
             y += 12;
             let head = Rect::new(x0, y - 8, w, 26);
-            self.cv.fill(Rect::new(x0, y, w, 1), blend(c.border, c.bg, 0.1));
+            self.cv
+                .fill(Rect::new(x0, y, w, 1), blend(c.border, c.bg, 0.1));
             let mut title = format!("{}  {name}", if open { "▼" } else { "▶" });
             let mut tip = String::new();
             if !open {
                 let summ = self.summary(name);
                 if !summ.is_empty() {
                     let shown: String = if summ.chars().count() > 30 {
-                        summ.chars().take(29).collect::<String>().trim_end().to_string() + "…"
+                        summ.chars()
+                            .take(29)
+                            .collect::<String>()
+                            .trim_end()
+                            .to_string()
+                            + "…"
                     } else {
                         summ.clone()
                     };
@@ -1520,7 +1973,16 @@ impl Editor {
             let bf = self.f.bold.clone();
             let tw = ui::text_w(&bf, px, &title, 0.0).ceil() as i32 + 12;
             self.cv.fill(Rect::new(x0, y - 8, tw.min(w), 18), c.bg);
-            ui::text_in(&mut self.cv, &bf, px, Rect::new(x0 + 2, y - 9, w - 4, 20), &title, blend(c.fg, c.bg, 0.15), 0, 0.0);
+            ui::text_in(
+                &mut self.cv,
+                &bf,
+                px,
+                Rect::new(x0 + 2, y - 9, w - 4, 20),
+                &title,
+                blend(c.fg, c.bg, 0.15),
+                0,
+                0.0,
+            );
             self.hit(head, Hit::Section(si));
             if !tip.is_empty() {
                 self.tipz(head, &tip);
@@ -1536,7 +1998,16 @@ impl Editor {
             };
             let lab = |e: &mut Self, y: i32, s: &str| {
                 let face = e.f.sans.clone();
-                ui::text_in(&mut e.cv, &face, px, Rect::new(x0 + 4, y, lab_w - 8, bh), s, c.muted, 0, 0.0);
+                ui::text_in(
+                    &mut e.cv,
+                    &face,
+                    px,
+                    Rect::new(x0 + 4, y, lab_w - 8, bh),
+                    s,
+                    c.muted,
+                    0,
+                    0.0,
+                );
             };
             match *name {
                 "CONTENT" => {
@@ -1557,20 +2028,39 @@ impl Editor {
                 "IMAGE" => {
                     let cw = 84;
                     let full = Rect::new(x0 + 4, y, w - 4, bh);
-                    self.field_draw(Rect::new(full.x, y, full.w - cw - 6, bh), Fid::Img, "Drop image here or choose…");
-                    self.btn(Rect::new(full.x + full.w - cw, y, cw, bh), "CHOOSE", Act::ChooseImage, BtnKind::Normal, "");
+                    self.field_draw(
+                        Rect::new(full.x, y, full.w - cw - 6, bh),
+                        Fid::Img,
+                        "Drop image here or choose…",
+                    );
+                    self.btn(
+                        Rect::new(full.x + full.w - cw, y, cw, bh),
+                        "CHOOSE",
+                        Act::ChooseImage,
+                        BtnKind::Normal,
+                        "",
+                    );
                     y += bh + 6;
                     let mut xx = x0 + 4;
                     xx += self.small_cap(xx, y, bh, "MODE");
                     self.combo(Rect::new(xx, y, 86, bh), Cid::ImgMode);
-                    self.tipz(Rect::new(xx, y, 86, bh), "FIT shows the whole image · FILL crops to the image frame");
+                    self.tipz(
+                        Rect::new(xx, y, 86, bh),
+                        "FIT shows the whole image · FILL crops to the image frame",
+                    );
                     xx += 86 + 10;
                     xx += self.small_cap(xx, y, bh, "TREATMENT");
                     let rw = 84;
                     let tw2 = (x0 + w - rw - 6 - xx).max(90);
                     self.combo(Rect::new(xx, y, tw2, bh), Cid::Treatment);
                     self.tipz(Rect::new(xx, y, tw2, bh), "Non-destructive image treatment");
-                    self.btn(Rect::new(x0 + w - rw, y, rw, bh), "REMOVE", Act::RemoveImage, BtnKind::Normal, "");
+                    self.btn(
+                        Rect::new(x0 + w - rw, y, rw, bh),
+                        "REMOVE",
+                        Act::RemoveImage,
+                        BtnKind::Normal,
+                        "",
+                    );
                     y += bh + 6;
                     let mut xx = x0 + 4;
                     xx += self.small_cap(xx, y, bh, "FOCAL X");
@@ -1583,28 +2073,73 @@ impl Editor {
                     self.small_cap(x0 + 4, y, 16, "BACKGROUND IMAGE");
                     y += 20;
                     let bw2 = 78;
-                    self.field_draw(Rect::new(x0 + 4, y, w - 4 - 2 * (bw2 + 6), bh), Fid::BgImg, "Optional full-slide background…");
-                    self.btn(Rect::new(x0 + w - 2 * bw2 - 6, y, bw2, bh), "CHOOSE", Act::ChooseBg, BtnKind::Normal, "");
-                    self.btn(Rect::new(x0 + w - bw2, y, bw2, bh), "REMOVE", Act::RemoveBg, BtnKind::Normal, "");
+                    self.field_draw(
+                        Rect::new(x0 + 4, y, w - 4 - 2 * (bw2 + 6), bh),
+                        Fid::BgImg,
+                        "Optional full-slide background…",
+                    );
+                    self.btn(
+                        Rect::new(x0 + w - 2 * bw2 - 6, y, bw2, bh),
+                        "CHOOSE",
+                        Act::ChooseBg,
+                        BtnKind::Normal,
+                        "",
+                    );
+                    self.btn(
+                        Rect::new(x0 + w - bw2, y, bw2, bh),
+                        "REMOVE",
+                        Act::RemoveBg,
+                        BtnKind::Normal,
+                        "",
+                    );
                     y += bh + 6;
                     let mut xx = x0 + 4;
                     let mw = {
-                        let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &self.f, px };
+                        let p = Paint {
+                            cv: &mut Canvas::new(1, 1),
+                            c: &c,
+                            f: &self.f,
+                            px,
+                        };
                         p.check_w("MONO")
                     };
                     self.check(Rect::new(xx, y, mw, bh), Kid::BgMono, "MONO");
                     xx += mw + 6;
                     let sl = (x0 + w - xx - 90) / 2;
                     let face = self.f.sans.clone();
-                    ui::text_in(&mut self.cv, &face, px, Rect::new(xx, y, 34, bh), "DIM", c.muted, 0, 0.0);
+                    ui::text_in(
+                        &mut self.cv,
+                        &face,
+                        px,
+                        Rect::new(xx, y, 34, bh),
+                        "DIM",
+                        c.muted,
+                        0,
+                        0.0,
+                    );
                     xx += 34;
                     self.slider(Rect::new(xx, y, sl, bh), Sid::BgDim);
-                    self.tipz(Rect::new(xx, y, sl, bh), "Theme-coloured dim veil · 75% is a safe readable default");
+                    self.tipz(
+                        Rect::new(xx, y, sl, bh),
+                        "Theme-coloured dim veil · 75% is a safe readable default",
+                    );
                     xx += sl + 6;
-                    ui::text_in(&mut self.cv, &face, px, Rect::new(xx, y, 40, bh), "BLUR", c.muted, 0, 0.0);
+                    ui::text_in(
+                        &mut self.cv,
+                        &face,
+                        px,
+                        Rect::new(xx, y, 40, bh),
+                        "BLUR",
+                        c.muted,
+                        0,
+                        0.0,
+                    );
                     xx += 40;
                     self.slider(Rect::new(xx, y, (x0 + w - xx).max(30), bh), Sid::BgBlur);
-                    self.tipz(Rect::new(xx, y, (x0 + w - xx).max(30), bh), "Background-only blur");
+                    self.tipz(
+                        Rect::new(xx, y, (x0 + w - xx).max(30), bh),
+                        "Background-only blur",
+                    );
                     y += bh + 6;
                     let mut xx = x0 + 4;
                     xx += self.small_cap(xx, y, bh, "BG FOCAL X");
@@ -1619,22 +2154,55 @@ impl Editor {
                     self.combo(Rect::new(xx, y, x0 + w - xx, bh), Cid::BgMotion);
                     self.tipz(Rect::new(xx, y, x0 + w - xx, bh), "Subtle background-only pan during presentation · disabled by Reduce motion");
                     y += bh + 6;
-                    self.field_draw(Rect::new(x0 + 4, y, w - 4, bh), Fid::Caption, "Caption / attribution");
+                    self.field_draw(
+                        Rect::new(x0 + 4, y, w - 4, bh),
+                        Fid::Caption,
+                        "Caption / attribution",
+                    );
                     y += bh + 6;
-                    self.field_draw(Rect::new(x0 + 4, y, w - 4, bh), Fid::ImageRequest, "AI image request / desired image…");
+                    self.field_draw(
+                        Rect::new(x0 + 4, y, w - 4, bh),
+                        Fid::ImageRequest,
+                        "AI image request / desired image…",
+                    );
                     y += bh + 6;
                 }
                 "VIDEO" => {
-                    self.field_draw(Rect::new(x0 + 4, y, w - 4, bh), Fid::VideoSource, "YouTube / Vimeo URL or local video path…");
+                    self.field_draw(
+                        Rect::new(x0 + 4, y, w - 4, bh),
+                        Fid::VideoSource,
+                        "YouTube / Vimeo URL or local video path…",
+                    );
                     y += bh + 6;
                     let b1 = 86;
                     let b2 = 120;
-                    self.field_draw(Rect::new(x0 + 4, y, w - 4 - b1 - b2 - 12, bh), Fid::VideoPoster, "Optional poster image…");
-                    self.btn(Rect::new(x0 + w - b1 - b2 - 6, y, b1, bh), "POSTER…", Act::ChoosePoster, BtnKind::Normal, "");
-                    self.btn(Rect::new(x0 + w - b2, y, b2, bh), "LOCAL VIDEO…", Act::ChooseVideo, BtnKind::Normal, "");
+                    self.field_draw(
+                        Rect::new(x0 + 4, y, w - 4 - b1 - b2 - 12, bh),
+                        Fid::VideoPoster,
+                        "Optional poster image…",
+                    );
+                    self.btn(
+                        Rect::new(x0 + w - b1 - b2 - 6, y, b1, bh),
+                        "POSTER…",
+                        Act::ChoosePoster,
+                        BtnKind::Normal,
+                        "",
+                    );
+                    self.btn(
+                        Rect::new(x0 + w - b2, y, b2, bh),
+                        "LOCAL VIDEO…",
+                        Act::ChooseVideo,
+                        BtnKind::Normal,
+                        "",
+                    );
                     y += bh + 6;
                     let aw = {
-                        let p = Paint { cv: &mut Canvas::new(1, 1), c: &c, f: &self.f, px };
+                        let p = Paint {
+                            cv: &mut Canvas::new(1, 1),
+                            c: &c,
+                            f: &self.f,
+                            px,
+                        };
                         p.check_w("AUTOPLAY")
                     };
                     self.check(Rect::new(x0 + 4, y, aw, bh), Kid::Autoplay, "AUTOPLAY");
@@ -1650,7 +2218,10 @@ impl Editor {
                     lab(self, y, "Logo");
                     let rr = row(&mut y, bh);
                     self.combo(rr, Cid::Logo);
-                    self.tipz(rr, "AUTO follows layout rules · ON forces logo · OFF hides logo on this slide");
+                    self.tipz(
+                        rr,
+                        "AUTO follows layout rules · ON forces logo · OFF hides logo on this slide",
+                    );
                     lab(self, y, "Accent");
                     let rr = row(&mut y, bh);
                     self.combo(rr, Cid::Accent);
@@ -1664,16 +2235,50 @@ impl Editor {
                     lab(self, y, "Typography");
                     let face = self.f.sans.clone();
                     let half = (fw - 100) / 2;
-                    ui::text_in(&mut self.cv, &face, px, Rect::new(fx, y, 44, bh), "Size", c.muted, 0, 0.0);
+                    ui::text_in(
+                        &mut self.cv,
+                        &face,
+                        px,
+                        Rect::new(fx, y, 44, bh),
+                        "Size",
+                        c.muted,
+                        0,
+                        0.0,
+                    );
                     self.combo(Rect::new(fx + 44, y, half, bh), Cid::FontScale);
-                    ui::text_in(&mut self.cv, &face, px, Rect::new(fx + 50 + half, y, 50, bh), "Align", c.muted, 0, 0.0);
-                    self.combo(Rect::new(fx + 100 + half, y, fw - 100 - half, bh), Cid::Align);
+                    ui::text_in(
+                        &mut self.cv,
+                        &face,
+                        px,
+                        Rect::new(fx + 50 + half, y, 50, bh),
+                        "Align",
+                        c.muted,
+                        0,
+                        0.0,
+                    );
+                    self.combo(
+                        Rect::new(fx + 100 + half, y, fw - 100 - half, bh),
+                        Cid::Align,
+                    );
                     y += bh + 6;
-                    ui::text_in(&mut self.cv, &face, px, Rect::new(fx, y, 50, bh), "Weight", c.muted, 0, 0.0);
+                    ui::text_in(
+                        &mut self.cv,
+                        &face,
+                        px,
+                        Rect::new(fx, y, 50, bh),
+                        "Weight",
+                        c.muted,
+                        0,
+                        0.0,
+                    );
                     self.combo(Rect::new(fx + 56, y, fw - 56, bh), Cid::Weight);
                     y += bh + 6;
                     for (label, id, tip) in [
-                        ("Brightness", Sid::Brightness, "Image brightness · 0 = unchanged"),
+                        (
+                            "Brightness",
+                            Sid::Brightness,
+                            "Image brightness · 0 = unchanged",
+                        ),
                         ("Contrast", Sid::Contrast, "Image contrast · 0 = unchanged"),
                         ("Overlay", Sid::Overlay, "Dark overlay strength · 0 = none"),
                         ("Blur", Sid::Blur, "Image blur · 0 = none"),
@@ -1687,19 +2292,48 @@ impl Editor {
                     self.btn(rr, "APPLY STYLE TO SELECTED", Act::ApplyStyle, BtnKind::Normal, "Copy this slide’s visual style to all selected slides without replacing their content");
                 }
                 "PRESENTATION" => {
-                    self.check(Rect::new(x0 + 4, y, w - 4, bh), Kid::Hidden, "HIDDEN SLIDE — skip while presenting");
+                    self.check(
+                        Rect::new(x0 + 4, y, w - 4, bh),
+                        Kid::Hidden,
+                        "HIDDEN SLIDE — skip while presenting",
+                    );
                     y += bh + 6;
                     let mut xx = x0 + 4;
                     xx += self.small_cap(xx, y, bh, "TRANSITION");
                     let pv = 100;
-                    self.combo(Rect::new(xx, y, x0 + w - xx - pv - 6, bh), Cid::SlideTransition);
-                    self.tipz(Rect::new(xx, y, x0 + w - xx - pv - 6, bh), "Override the deck transition for this slide");
-                    self.btn(Rect::new(x0 + w - pv, y, pv, bh), "▶ PREVIEW", Act::PreviewTransition, BtnKind::Normal, "Preview the transition into the current slide");
+                    self.combo(
+                        Rect::new(xx, y, x0 + w - xx - pv - 6, bh),
+                        Cid::SlideTransition,
+                    );
+                    self.tipz(
+                        Rect::new(xx, y, x0 + w - xx - pv - 6, bh),
+                        "Override the deck transition for this slide",
+                    );
+                    self.btn(
+                        Rect::new(x0 + w - pv, y, pv, bh),
+                        "▶ PREVIEW",
+                        Act::PreviewTransition,
+                        BtnKind::Normal,
+                        "Preview the transition into the current slide",
+                    );
                     y += bh + 8;
                     let face = self.f.sans.clone();
-                    ui::text_in(&mut self.cv, &face, px, Rect::new(x0 + 4, y, w, 18), "SPEAKER NOTES", c.muted, 0, 0.0);
+                    ui::text_in(
+                        &mut self.cv,
+                        &face,
+                        px,
+                        Rect::new(x0 + 4, y, w, 18),
+                        "SPEAKER NOTES",
+                        c.muted,
+                        0,
+                        0.0,
+                    );
                     y += 22;
-                    self.field_draw(Rect::new(x0 + 4, y, w - 4, 160), Fid::Notes, "Private notes — never shown to audience");
+                    self.field_draw(
+                        Rect::new(x0 + 4, y, w - 4, 160),
+                        Fid::Notes,
+                        "Private notes — never shown to audience",
+                    );
                     y += 166;
                 }
                 _ => {}
@@ -1709,15 +2343,23 @@ impl Editor {
         self.cv.pop_clip_rect();
         if max_scroll > 0 {
             let track = Rect::new(area.x + area.w - 4, area.y, 3, area.h);
-            let th = ((area.h as f32 / self.insp_content_h as f32) * track.h as f32).max(24.0) as i32;
-            let ty = track.y + ((self.insp_scroll as f32 / max_scroll as f32) * (track.h - th) as f32) as i32;
-            self.cv.fill(Rect::new(track.x, ty, track.w, th), c.border_strong);
+            let th =
+                ((area.h as f32 / self.insp_content_h as f32) * track.h as f32).max(24.0) as i32;
+            let ty = track.y
+                + ((self.insp_scroll as f32 / max_scroll as f32) * (track.h - th) as f32) as i32;
+            self.cv
+                .fill(Rect::new(track.x, ty, track.w, th), c.border_strong);
         }
     }
 
     fn small_cap(&mut self, x: i32, y: i32, h: i32, s: &str) -> i32 {
         let c = self.c.clone();
-        let mut p = Paint { cv: &mut self.cv, c: &c, f: &self.f, px: c.font_px };
+        let mut p = Paint {
+            cv: &mut self.cv,
+            c: &c,
+            f: &self.f,
+            px: c.font_px,
+        };
         let w = p.cap_w(s);
         p.cap(Rect::new(x, y, w, h), s);
         w + 6
@@ -1731,16 +2373,40 @@ impl Editor {
         let sw = ui::text_w(&face, px, &self.save_state, 0.0).ceil() as i32 + 16;
         if let Some((m, _, _)) = &self.status {
             let m = m.clone();
-            ui::text_in(&mut self.cv, &face, px, Rect::new(r.x + 8, r.y, r.w - sw - 24, r.h), &m, c.muted, 0, 0.0);
+            ui::text_in(
+                &mut self.cv,
+                &face,
+                px,
+                Rect::new(r.x + 8, r.y, r.w - sw - 24, r.h),
+                &m,
+                c.muted,
+                0,
+                0.0,
+            );
         }
         let st = self.save_state.clone();
-        ui::text_in(&mut self.cv, &face, px, Rect::new(r.x + r.w - sw - 8, r.y, sw, r.h), &st, c.muted, 2, 0.0);
+        ui::text_in(
+            &mut self.cv,
+            &face,
+            px,
+            Rect::new(r.x + r.w - sw - 8, r.y, sw, r.h),
+            &st,
+            c.muted,
+            2,
+            0.0,
+        );
         self.tipz(Rect::new(r.x + r.w - sw - 8, r.y, sw, r.h), "Unsaved edits are autosaved 2.5 s after the last change and offered for recovery after a crash");
     }
 
     // ---------------------------------------------------------- popups
 
-    fn open_popup(&mut self, owner: Hit, anchor: Rect, items: Vec<(String, Option<PopAct>)>, current: Option<usize>) {
+    fn open_popup(
+        &mut self,
+        owner: Hit,
+        anchor: Rect,
+        items: Vec<(String, Option<PopAct>)>,
+        current: Option<usize>,
+    ) {
         let row_h = (ui::line_h(&self.f.sans, self.c.font_px).ceil() as i32 + 12).max(26);
         let maxw = items
             .iter()
@@ -1751,7 +2417,10 @@ impl Editor {
         let n = items.len().min(18);
         let rect = ui::place_popup(anchor, n, row_h, maxw.min(520), bounds);
         let vis = ((rect.h - 8) / row_h).max(1) as usize;
-        let scroll = current.map(|c| c.saturating_sub(vis / 2)).unwrap_or(0).min(items.len().saturating_sub(vis));
+        let scroll = current
+            .map(|c| c.saturating_sub(vis / 2))
+            .unwrap_or(0)
+            .min(items.len().saturating_sub(vis));
         self.popup = Some(Popup {
             items,
             rect,
@@ -1870,7 +2539,19 @@ impl Editor {
         if self.dialog.is_some() {
             // Only the dialog (recorded last) receives the mouse.
             for (r, h) in self.hits.iter().rev() {
-                if r.contains(x, y) && matches!(h, Hit::D(_) | Hit::DList(_) | Hit::DListArea | Hit::Field(Fid::D(_)) | Hit::Combo(Cid::D(_)) | Hit::Check(Kid::D(_)) | Hit::Slider(Sid::D(_)) | Hit::Modal) {
+                if r.contains(x, y)
+                    && matches!(
+                        h,
+                        Hit::D(_)
+                            | Hit::DList(_)
+                            | Hit::DListArea
+                            | Hit::Field(Fid::D(_))
+                            | Hit::Combo(Cid::D(_))
+                            | Hit::Check(Kid::D(_))
+                            | Hit::Slider(Sid::D(_))
+                            | Hit::Modal
+                    )
+                {
                     return Some(*h);
                 }
             }
@@ -1906,7 +2587,14 @@ impl Editor {
                 self.hover_at = None;
                 self.dirty_draw = true;
             }
-            Ev::Button { x: bx, y: by, button, state, press, .. } => {
+            Ev::Button {
+                x: bx,
+                y: by,
+                button,
+                state,
+                press,
+                ..
+            } => {
                 return self.button(x, *bx, *by, *button, *state, *press);
             }
             Ev::Key { sym, state, ch, .. } => return self.key(x, *sym, *state, *ch),
@@ -1920,7 +2608,11 @@ impl Editor {
         self.mouse = (mx, my);
         if let Some(d) = self.drag.clone() {
             match d {
-                Drag::Split { left, start_x, start_w } => {
+                Drag::Split {
+                    left,
+                    start_x,
+                    start_w,
+                } => {
                     let dx = mx - start_x;
                     if left {
                         self.left_w = (start_w + dx).clamp(200, self.cv.w / 3);
@@ -1933,9 +2625,17 @@ impl Editor {
                     let v = Paint::slider_value(r, lo, hi, mx);
                     self.slider_set(id, v);
                 }
-                Drag::Slides { from, start_y, moved } => {
+                Drag::Slides {
+                    from,
+                    start_y,
+                    moved,
+                } => {
                     if !moved && (my - start_y).abs() > 6 {
-                        self.drag = Some(Drag::Slides { from, start_y, moved: true });
+                        self.drag = Some(Drag::Slides {
+                            from,
+                            start_y,
+                            moved: true,
+                        });
                     }
                 }
                 Drag::Text(id) => {
@@ -2013,7 +2713,15 @@ impl Editor {
         }
     }
 
-    fn button(&mut self, x: &mut X, mx: i32, my: i32, button: u8, state: u16, press: bool) -> Request {
+    fn button(
+        &mut self,
+        x: &mut X,
+        mx: i32,
+        my: i32,
+        button: u8,
+        state: u16,
+        press: bool,
+    ) -> Request {
         self.tip = None;
         self.hover_at = None;
         if button == 4 || button == 5 {
@@ -2024,7 +2732,10 @@ impl Editor {
         }
         if !press {
             let d = self.drag.take();
-            if let Some(Drag::Slides { from, moved: true, .. }) = d {
+            if let Some(Drag::Slides {
+                from, moved: true, ..
+            }) = d
+            {
                 if let Some(Hit::Slide(to)) = self.hit_at(mx, my) {
                     self.drag_reorder(from, to);
                 }
@@ -2040,7 +2751,9 @@ impl Editor {
         }
         let dbl = {
             let (t, lx, ly, n) = self.last_click;
-            let close = t.elapsed() < Duration::from_millis(400) && (lx - mx).abs() < 5 && (ly - my).abs() < 5;
+            let close = t.elapsed() < Duration::from_millis(400)
+                && (lx - mx).abs() < 5
+                && (ly - my).abs() < 5;
             let n = if close { n + 1 } else { 1 };
             self.last_click = (now(), mx, my, n);
             n
@@ -2122,7 +2835,11 @@ impl Editor {
                     }
                     self.sel_anchor = i;
                     self.select(i);
-                    self.drag = Some(Drag::Slides { from: i, start_y: my, moved: false });
+                    self.drag = Some(Drag::Slides {
+                        from: i,
+                        start_y: my,
+                        moved: false,
+                    });
                 }
             }
             Hit::Section(si) => {
@@ -2135,10 +2852,18 @@ impl Editor {
                 }
             }
             Hit::SplitLeft => {
-                self.drag = Some(Drag::Split { left: true, start_x: mx, start_w: self.left_w });
+                self.drag = Some(Drag::Split {
+                    left: true,
+                    start_x: mx,
+                    start_w: self.left_w,
+                });
             }
             Hit::SplitRight => {
-                self.drag = Some(Drag::Split { left: false, start_x: mx, start_w: self.right_w });
+                self.drag = Some(Drag::Split {
+                    left: false,
+                    start_x: mx,
+                    start_w: self.right_w,
+                });
             }
             Hit::D(_) | Hit::DList(_) | Hit::DListArea | Hit::Modal => {
                 return dialogs::click(self, x, hit, mx, my, dbl);
@@ -2183,7 +2908,10 @@ impl Editor {
             }
             Some(h) if self.dialog.is_none() => {
                 let in_list = matches!(h, Hit::Slide(_) | Hit::SlideList);
-                let in_insp = self.hits.iter().any(|(r, hh)| *hh == Hit::Inspector && r.contains(mx, my));
+                let in_insp = self
+                    .hits
+                    .iter()
+                    .any(|(r, hh)| *hh == Hit::Inspector && r.contains(mx, my));
                 if in_list {
                     self.list_scroll = (self.list_scroll + d * 70).max(0);
                 } else if in_insp {
@@ -2197,7 +2925,9 @@ impl Editor {
     fn dropped(&mut self, dx: i32, dy: i32, paths: &[String]) {
         let Some(p) = paths.iter().find(|p| {
             let l = p.to_lowercase();
-            [".png", ".jpg", ".jpeg", ".webp", ".bmp"].iter().any(|e| l.ends_with(e))
+            [".png", ".jpg", ".jpeg", ".webp", ".bmp"]
+                .iter()
+                .any(|e| l.ends_with(e))
         }) else {
             return;
         };
@@ -2249,7 +2979,10 @@ impl Editor {
                         K_PRIOR => -10,
                         _ => 10,
                     };
-                    let mut k = pos.map(|p| p as i32 + d).unwrap_or(0).clamp(0, f.len() as i32 - 1);
+                    let mut k = pos
+                        .map(|p| p as i32 + d)
+                        .unwrap_or(0)
+                        .clamp(0, f.len() as i32 - 1);
                     while k >= 0 && (k as usize) < f.len() && p.items[f[k as usize]].1.is_none() {
                         k += d.signum();
                     }
@@ -2294,10 +3027,23 @@ impl Editor {
                 self.blur();
                 return Request::None;
             }
-            let is_shortcut = ctrl
-                && matches!(sym, 0x6e | 0x4e | 0x6f | 0x4f | 0x73 | 0x53 | 0x6b | 0x4b | 0x64 | 0x44 | K_RETURN | 0x65 | 0x45)
-                || sym == K_F5
-                || (sym == K_TAB && !id.multiline());
+            let is_shortcut =
+                ctrl && matches!(
+                    sym,
+                    0x6e | 0x4e
+                        | 0x6f
+                        | 0x4f
+                        | 0x73
+                        | 0x53
+                        | 0x6b
+                        | 0x4b
+                        | 0x64
+                        | 0x44
+                        | K_RETURN
+                        | 0x65
+                        | 0x45
+                ) || sym == K_F5
+                    || (sym == K_TAB && !id.multiline());
             if !is_shortcut {
                 let r = self.edit_key(x, id, sym, state, ch);
                 if r != EditResult::Unhandled {
@@ -2359,10 +3105,21 @@ impl Editor {
         Request::None
     }
 
-    pub fn edit_key(&mut self, x: &mut X, id: Fid, sym: u32, state: u16, ch: Option<char>) -> EditResult {
+    pub fn edit_key(
+        &mut self,
+        x: &mut X,
+        id: Fid,
+        sym: u32,
+        state: u16,
+        ch: Option<char>,
+    ) -> EditResult {
         let face = self.f.sans.clone();
         let px = self.c.font_px;
-        let width = self.field_rects.get(&id).map(|r| (r.w - 16) as f32).unwrap_or(300.0);
+        let width = self
+            .field_rects
+            .get(&id)
+            .map(|r| (r.w - 16) as f32)
+            .unwrap_or(300.0);
         let text = self.edit_mut(id).text.clone();
         let lay = ui::area_layout(&face, px, &text, width);
         let vmove = |cur: usize, d: i32, goal: Option<f32>| -> (usize, f32) {
@@ -2601,7 +3358,10 @@ impl Editor {
         }
         self.profile = name.to_string();
         let label = self.profile_info().label;
-        self.set_status(&format!("Profile: {label} · applies to new decks; open decks keep their logo setting"), 4000);
+        self.set_status(
+            &format!("Profile: {label} · applies to new decks; open decks keep their logo setting"),
+            4000,
+        );
     }
 
     pub fn set_chrome_follow(&mut self, x: &X, follow: bool) {
@@ -2700,9 +3460,17 @@ impl Editor {
     fn add_preset(&mut self, k: u8) {
         let (layout, title, body) = match k {
             0 => ("TITLE", "Presentation title", "Short subtitle"),
-            1 | 4 => ("BULLETS", "Agenda", "First point\nSecond point\nThird point"),
+            1 | 4 => (
+                "BULLETS",
+                "Agenda",
+                "First point\nSecond point\nThird point",
+            ),
             2 => ("SECTION", "01 · Section", "Short context"),
-            3 => ("STATEMENT", "One clear message", "Short supporting sentence"),
+            3 => (
+                "STATEMENT",
+                "One clear message",
+                "Short supporting sentence",
+            ),
             5 => ("SPLIT", "Image + message", "Supporting text"),
             6 => ("BIG NUMBER", "80%", "Key result or KPI"),
             _ => ("END", "Thank you", "Questions / contact"),
@@ -2735,17 +3503,39 @@ impl Editor {
     }
 
     fn apply_style_to_selected(&mut self) {
-        let Some(src) = self.current().cloned() else { return };
+        let Some(src) = self.current().cloned() else {
+            return;
+        };
         let rows: Vec<usize> = self.sel.iter().copied().collect();
         if rows.len() < 2 {
             self.set_status("Select two or more slides to apply style", 2500);
             return;
         }
         let keys = [
-            "themeOverride", "logoMode", "accentOverride", "fontScale", "align", "weight", "fontFamily",
-            "brightness", "contrast", "overlay", "blur", "imageMode", "imageTreatment", "mono", "focalX",
-            "focalY", "listStyle", "backgroundImage", "backgroundMono", "backgroundDim", "backgroundBlur",
-            "backgroundFocalX", "backgroundFocalY", "transition",
+            "themeOverride",
+            "logoMode",
+            "accentOverride",
+            "fontScale",
+            "align",
+            "weight",
+            "fontFamily",
+            "brightness",
+            "contrast",
+            "overlay",
+            "blur",
+            "imageMode",
+            "imageTreatment",
+            "mono",
+            "focalX",
+            "focalY",
+            "listStyle",
+            "backgroundImage",
+            "backgroundMono",
+            "backgroundDim",
+            "backgroundBlur",
+            "backgroundFocalX",
+            "backgroundFocalY",
+            "transition",
         ];
         for &i in &rows {
             if let Some(Value::Object(d)) = self.slides_mut().get_mut(i) {
@@ -2759,13 +3549,22 @@ impl Editor {
         self.refresh(c);
         self.mark_dirty();
         self.push_history();
-        self.set_status(&format!("Applied style to {} selected slides", rows.len()), 2500);
+        self.set_status(
+            &format!("Applied style to {} selected slides", rows.len()),
+            2500,
+        );
     }
 
     fn preview_transition(&mut self) -> Request {
         let cur = self.cur;
         let mut prev = cur as i64 - 1;
-        while prev >= 0 && self.slides().get(prev as usize).and_then(|v| v.as_object()).is_some_and(|s| b_get(s, "hidden")) {
+        while prev >= 0
+            && self
+                .slides()
+                .get(prev as usize)
+                .and_then(|v| v.as_object())
+                .is_some_and(|s| b_get(s, "hidden"))
+        {
             prev -= 1;
         }
         if prev < 0 {
@@ -2783,11 +3582,17 @@ impl Editor {
             let layout = s_get(s, "layout", "TITLE");
             let mut push = |k: &str, m: String| issues.push((i, k.to_string(), m));
             let title = s_get(s, "title", "");
-            let words = format!("{title} {}", s_get(s, "body", "")).split_whitespace().count();
+            let words = format!("{title} {}", s_get(s, "body", ""))
+                .split_whitespace()
+                .count();
             if !LAYOUTS.contains(&layout.as_str()) {
                 push("ERROR", format!("Unknown layout: {layout}"));
             }
-            if !(truthy(s.get("title")) || truthy(s.get("body")) || truthy(s.get("image")) || truthy(s.get("imageRequest"))) {
+            if !(truthy(s.get("title"))
+                || truthy(s.get("body"))
+                || truthy(s.get("image"))
+                || truthy(s.get("imageRequest")))
+            {
                 push("WARN", "Empty slide".into());
             }
             let img = s_get(s, "image", "");
@@ -2795,7 +3600,10 @@ impl Editor {
                 push("ERROR", format!("Missing image: {img}"));
             }
             if truthy(s.get("imageRequest")) && img.is_empty() {
-                push("TODO", format!("Unresolved image request: {}", s_get(s, "imageRequest", "")));
+                push(
+                    "TODO",
+                    format!("Unresolved image request: {}", s_get(s, "imageRequest", "")),
+                );
             }
             for problem in render::slide_fit_issues(s, &self.data, i) {
                 let mut c = problem.chars();
@@ -2805,15 +3613,40 @@ impl Editor {
                 };
                 push("WARN", p);
             }
-            if ["IMAGE", "PHOTO", "HERO IMAGE", "IMAGE + QUOTE", "IMAGE + CAPTION", "FULL BLEED"].contains(&layout.as_str())
+            if [
+                "IMAGE",
+                "PHOTO",
+                "HERO IMAGE",
+                "IMAGE + QUOTE",
+                "IMAGE + CAPTION",
+                "FULL BLEED",
+            ]
+            .contains(&layout.as_str())
                 && !(truthy(s.get("image")) || truthy(s.get("imageRequest")))
             {
                 push("WARN", format!("{layout} layout has no image"));
             }
-            if layout == "FULL BLEED" && !img.is_empty() && i_get(s, "overlay", 0) < 12 && (truthy(s.get("title")) || truthy(s.get("body"))) {
-                push("WARN", "FULL BLEED text may need more overlay for image contrast".into());
+            if layout == "FULL BLEED"
+                && !img.is_empty()
+                && i_get(s, "overlay", 0) < 12
+                && (truthy(s.get("title")) || truthy(s.get("body")))
+            {
+                push(
+                    "WARN",
+                    "FULL BLEED text may need more overlay for image contrast".into(),
+                );
             }
-            let limit = if ["TITLE", "STATEMENT", "PHOTO", "HERO IMAGE", "IMAGE + QUOTE", "BIG NUMBER", "DATA / KPI"].contains(&layout.as_str()) {
+            let limit = if [
+                "TITLE",
+                "STATEMENT",
+                "PHOTO",
+                "HERO IMAGE",
+                "IMAGE + QUOTE",
+                "BIG NUMBER",
+                "DATA / KPI",
+            ]
+            .contains(&layout.as_str())
+            {
                 70
             } else {
                 120
@@ -2822,20 +3655,32 @@ impl Editor {
                 push("WARN", format!("Text-heavy slide: {words} words"));
             }
             if title.chars().count() > 120 {
-                push("WARN", "Very long title; may reach minimum text size".into());
+                push(
+                    "WARN",
+                    "Very long title; may reach minimum text size".into(),
+                );
             }
             let ov = s_get(s, "themeOverride", "DECK");
             let deck_theme = s_get(&self.data, "theme", "B&W");
             let eff = normalize_theme(if ov != "DECK" { &ov } else { &deck_theme });
             let udd = theme(&eff).is_some_and(|t| t.uddevalla);
             if udd && !Deck(&self.data).show_logo() && s_get(s, "logoMode", "AUTO") == "ON" {
-                push("WARN", "Slide requests logo ON but deck LOGO master switch is OFF".into());
+                push(
+                    "WARN",
+                    "Slide requests logo ON but deck LOGO master switch is OFF".into(),
+                );
             }
             if s_get(s, "accentOverride", "AUTO") != "AUTO" && !udd {
-                push("WARN", "Uddevalla accent override is set on a non-Uddevalla theme".into());
+                push(
+                    "WARN",
+                    "Uddevalla accent override is set on a non-Uddevalla theme".into(),
+                );
             }
             if layout == "FULL BLEED" && s_get(s, "logoMode", "AUTO") == "ON" && img.is_empty() {
-                push("WARN", "FULL BLEED logo is ON but no background image is set".into());
+                push(
+                    "WARN",
+                    "FULL BLEED logo is ON but no background image is set".into(),
+                );
             }
         }
         issues
@@ -2844,7 +3689,11 @@ impl Editor {
     fn presentation_check(&mut self) {
         let issues = self.validate_deck();
         if issues.is_empty() {
-            dialogs::message(self, "Presentation Check", "Ready to present.\n\nNo deck-health issues were found.");
+            dialogs::message(
+                self,
+                "Presentation Check",
+                "Ready to present.\n\nNo deck-health issues were found.",
+            );
             return;
         }
         let cnt = |k: &str| issues.iter().filter(|x| x.1 == k).count();
@@ -2857,16 +3706,26 @@ impl Editor {
             cnt("TODO")
         );
         if blocking {
-            msg.push_str("\n\nThe presentation can still run, but audience output may be incomplete.");
+            msg.push_str(
+                "\n\nThe presentation can still run, but audience output may be incomplete.",
+            );
         }
         msg.push_str("\n\nOpen Deck Health?");
-        dialogs::ask(self, "Presentation Check", &msg, vec![("Yes", 1), ("No", 0)], Then::Health);
+        dialogs::ask(
+            self,
+            "Presentation Check",
+            &msg,
+            vec![("Yes", 1), ("No", 0)],
+            Then::Health,
+        );
     }
 
     // --------------------------------------------------- files and saving
 
     pub fn dialog_start(&self, filename: &str, prefer_current: bool) -> PathBuf {
-        let folder = self.file_prefs.preferred(self.path.as_deref(), prefer_current);
+        let folder = self
+            .file_prefs
+            .preferred(self.path.as_deref(), prefer_current);
         if filename.is_empty() {
             folder
         } else {
@@ -2896,7 +3755,10 @@ impl Editor {
 
     pub fn update_title(&self, x: &X) {
         let display = match &self.path {
-            Some(p) => p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
             None => {
                 let t = s_get(&self.data, "title", "Untitled");
                 if t.is_empty() {
@@ -2906,7 +3768,13 @@ impl Editor {
                 }
             }
         };
-        let _ = x.set_title(self.win, &format!("{display}{} — {APP} {VERSION}", if self.dirty { " *" } else { "" }));
+        let _ = x.set_title(
+            self.win,
+            &format!(
+                "{display}{} — {APP} {VERSION}",
+                if self.dirty { " *" } else { "" }
+            ),
+        );
     }
 
     /// Save to the current path (or ask for one); `then` runs afterwards.
@@ -2984,7 +3852,10 @@ impl Editor {
     pub fn new_deck(&mut self, x: &X, theme_name: &str) {
         let mut d = default_deck();
         normalize_loaded(&mut d, "Untitled");
-        d.insert("showLogo".into(), json!(self.profile_info().show_logo_default));
+        d.insert(
+            "showLogo".into(),
+            json!(self.profile_info().show_logo_default),
+        );
         d.insert("theme".into(), json!(theme_name));
         self.data = d;
         self.path = None;
@@ -3018,14 +3889,28 @@ impl Editor {
                 self.push_history();
                 self.update_title(x);
                 let n = self.slides().len();
-                self.set_status(&format!("Imported {n} slides · {} normalization(s)", report.len()), 4000);
+                self.set_status(
+                    &format!("Imported {n} slides · {} normalization(s)", report.len()),
+                    4000,
+                );
                 let issues = self.validate_deck();
                 if !issues.is_empty() {
-                    self.set_status(&format!("{} deck health note(s) · Ctrl+K → Deck health", issues.len()), 4500);
+                    self.set_status(
+                        &format!(
+                            "{} deck health note(s) · Ctrl+K → Deck health",
+                            issues.len()
+                        ),
+                        4500,
+                    );
                 }
                 if !report.is_empty() {
-                    let lines: Vec<String> = report.iter().take(12).map(|r| format!("• {r}")).collect();
-                    dialogs::message(self, "Markdown import", &format!("Imported {n} slides.\n\nNormalized:\n{}", lines.join("\n")));
+                    let lines: Vec<String> =
+                        report.iter().take(12).map(|r| format!("• {r}")).collect();
+                    dialogs::message(
+                        self,
+                        "Markdown import",
+                        &format!("Imported {n} slides.\n\nNormalized:\n{}", lines.join("\n")),
+                    );
                 }
             }
             Err(e) => dialogs::message(self, "Markdown import failed", &e),
@@ -3078,7 +3963,12 @@ impl Editor {
             .get("source")
             .and_then(|s| s.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| Path::new(s).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+            .map(|s| {
+                Path::new(s)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
             .unwrap_or_else(|| "an untitled presentation".into());
         if !v.get("data").is_some_and(|d| d.is_object()) {
             self.clear_autosave();
@@ -3111,18 +4001,32 @@ impl Editor {
         self.push_history();
         self.update_title(x);
         self.save_state = "● Recovered from autosave".into();
-        self.set_status(&format!("Recovered from autosave ({when}) · save to keep it"), 5000);
+        self.set_status(
+            &format!("Recovered from autosave ({when}) · save to keep it"),
+            5000,
+        );
     }
 
     // ------------------------------------------------------- presenting
 
     pub fn start_talk(&mut self, profile: &str) -> Request {
         if self.presenting {
-            self.set_status("End the current presentation before starting Talk mode", 2500);
+            self.set_status(
+                "End the current presentation before starting Talk mode",
+                2500,
+            );
             return Request::None;
         }
-        if !self.slides().iter().any(|s| !s.as_object().is_some_and(|s| b_get(s, "hidden"))) {
-            dialogs::message(self, "Talk mode", "Add at least one visible slide before recording.");
+        if !self
+            .slides()
+            .iter()
+            .any(|s| !s.as_object().is_some_and(|s| b_get(s, "hidden")))
+        {
+            dialogs::message(
+                self,
+                "Talk mode",
+                "Add at least one visible slide before recording.",
+            );
             return Request::None;
         }
         self.set_status(&format!("Starting NIRUCLIP profile {profile}…"), 15000);
@@ -3139,13 +4043,29 @@ impl Editor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn present(&mut self, x: &mut X, from_start: bool, presenter: Option<usize>, audience: Option<usize>, online: bool, talk: bool, single: Option<&str>) -> Request {
+    pub fn present(
+        &mut self,
+        x: &mut X,
+        from_start: bool,
+        presenter: Option<usize>,
+        audience: Option<usize>,
+        online: bool,
+        talk: bool,
+        single: Option<&str>,
+    ) -> Request {
         let slides = self.slides();
         if slides.is_empty() {
             return Request::None;
         }
-        if !slides.iter().any(|s| !s.as_object().is_some_and(|s| b_get(s, "hidden"))) {
-            dialogs::message(self, "Cannot present", "All slides are hidden. Unhide at least one slide first.");
+        if !slides
+            .iter()
+            .any(|s| !s.as_object().is_some_and(|s| b_get(s, "hidden")))
+        {
+            dialogs::message(
+                self,
+                "Cannot present",
+                "All slides are hidden. Unhide at least one slide first.",
+            );
             return Request::None;
         }
         let start = if from_start { 0 } else { self.cur };
@@ -3162,7 +4082,13 @@ impl Editor {
             };
             match choice.as_deref() {
                 None => {
-                    dialogs::open(self, Kind::OneScreen { ask: false, from_start });
+                    dialogs::open(
+                        self,
+                        Kind::OneScreen {
+                            ask: false,
+                            from_start,
+                        },
+                    );
                     return Request::None;
                 }
                 Some("laptop") => online = true,
@@ -3174,7 +4100,10 @@ impl Editor {
         let audience = match audience {
             Some(a) => a,
             None => {
-                let pref = prefs::display_prefs().get("audience").and_then(|v| v.as_str()).map(str::to_string);
+                let pref = prefs::display_prefs()
+                    .get("audience")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 pref.and_then(|n| mons.iter().position(|m| m.name == n))
                     .filter(|&a| a != presenter || mons.len() < 2)
                     .or_else(|| (0..mons.len()).find(|&i| i != presenter))
@@ -3201,7 +4130,13 @@ impl Editor {
     fn presenter_view(&mut self, x: &mut X) -> Request {
         let mons = x.monitors();
         if mons.len() < 2 {
-            dialogs::open(self, Kind::OneScreen { ask: true, from_start: false });
+            dialogs::open(
+                self,
+                Kind::OneScreen {
+                    ask: true,
+                    from_start: false,
+                },
+            );
             return Request::None;
         }
         dialogs::open_display_setup(self, mons);
@@ -3248,4 +4183,3 @@ impl Editor {
         next
     }
 }
-

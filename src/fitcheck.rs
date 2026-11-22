@@ -10,7 +10,8 @@ use crate::render::{self, Ctx};
 use crate::textfit;
 use serde_json::json;
 
-const LONGWORD: &str = "https://intranet.example.org/socialtjanst/rutiner/handlaggning/dokumentation";
+const LONGWORD: &str =
+    "https://intranet.example.org/socialtjanst/rutiner/handlaggning/dokumentation";
 const IMAGE_LAYOUTS: [&str; 7] = [
     "IMAGE",
     "PHOTO",
@@ -69,7 +70,11 @@ fn body_for(layout: &str, lv: &str) -> String {
                 "long" => "1 234 567",
                 _ => "1 234 567 890 kr",
             };
-            join((0..n).map(|i| format!("{vals} | {}", line(lv, i))).collect())
+            join(
+                (0..n)
+                    .map(|i| format!("{vals} | {}", line(lv, i)))
+                    .collect(),
+            )
         }
         "PROCESS" | "TIMELINE" | "MATRIX" => {
             let step = match lv {
@@ -78,7 +83,11 @@ fn body_for(layout: &str, lv: &str) -> String {
                 "long" => "Discovery and planning",
                 _ => "Discovery, planning and stakeholder alignment",
             };
-            join((0..n).map(|i| format!("{step} {} | {}", i + 1, line(lv, i))).collect())
+            join(
+                (0..n)
+                    .map(|i| format!("{step} {} | {}", i + 1, line(lv, i)))
+                    .collect(),
+            )
         }
         "TABLE" => {
             let cols = match lv {
@@ -92,9 +101,17 @@ fn body_for(layout: &str, lv: &str) -> String {
                 "normal" => 4,
                 _ => 9,
             };
-            let mut rows = vec![(0..cols).map(|c| format!("Header {}", c + 1)).collect::<Vec<_>>().join(" | ")];
+            let mut rows = vec![(0..cols)
+                .map(|c| format!("Header {}", c + 1))
+                .collect::<Vec<_>>()
+                .join(" | ")];
             for r in 0..n {
-                rows.push((0..cols).map(|c| words(wn, r + c)).collect::<Vec<_>>().join(" | "));
+                rows.push(
+                    (0..cols)
+                        .map(|c| words(wn, r + c))
+                        .collect::<Vec<_>>()
+                        .join(" | "),
+                );
             }
             join(rows)
         }
@@ -104,7 +121,13 @@ fn body_for(layout: &str, lv: &str) -> String {
             format!("{l}\n|||\n{r}")
         }
         "THREE COLUMN" => (0..3)
-            .map(|k| join((0..n.saturating_sub(1).max(1)).map(|i| line(lv, i + k)).collect()))
+            .map(|k| {
+                join(
+                    (0..n.saturating_sub(1).max(1))
+                        .map(|i| line(lv, i + k))
+                        .collect(),
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n|||\n"),
         "CODE" => {
@@ -233,9 +256,15 @@ pub fn run(out_dir: Option<&std::path::Path>) -> (Vec<String>, Vec<String>) {
                         && ln.right() <= bx.right() + 1.0
                         && ln.y >= bx.y - 1.0
                         && ln.bottom() <= bx.bottom() + 1.0;
-                    let on_slide = bx.x >= -1.0 && bx.y >= -1.0 && bx.right() <= w as f32 + 1.0 && bx.bottom() <= h as f32 + 1.0;
+                    let on_slide = bx.x >= -1.0
+                        && bx.y >= -1.0
+                        && bx.right() <= w as f32 + 1.0
+                        && bx.bottom() <= h as f32 + 1.0;
                     if !inside || !on_slide {
-                        failures.push(format!("OVERFLOW {tag}: {:?} line={ln:?} box={bx:?}", txt.chars().take(40).collect::<String>()));
+                        failures.push(format!(
+                            "OVERFLOW {tag}: {:?} line={ln:?} box={bx:?}",
+                            txt.chars().take(40).collect::<String>()
+                        ));
                     }
                 }
                 let bad: Vec<_> = report
@@ -243,16 +272,27 @@ pub fn run(out_dir: Option<&std::path::Path>) -> (Vec<String>, Vec<String>) {
                     .filter(|r| !matches!(r.label.as_str(), "footer" | "label" | "request"))
                     .collect();
                 if !bad.is_empty() && (lv == "short" || lv == "normal") {
-                    failures.push(format!("NOFIT {tag}: {:?}", bad.iter().map(|r| (&r.label, r.kind, r.count)).collect::<Vec<_>>()));
+                    failures.push(format!(
+                        "NOFIT {tag}: {:?}",
+                        bad.iter()
+                            .map(|r| (&r.label, r.kind, r.count))
+                            .collect::<Vec<_>>()
+                    ));
                 } else if !bad.is_empty() {
                     notes.push(format!(
                         "{tag}: {}",
-                        bad.iter().map(|r| format!("{} {}", r.kind, r.label)).collect::<Vec<_>>().join(", ")
+                        bad.iter()
+                            .map(|r| format!("{} {}", r.kind, r.label))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ));
                 }
                 if let (Some(dir), true) = (out_dir, (w, h) == (1920, 1080)) {
                     let _ = std::fs::create_dir_all(dir);
-                    let safe = layout.replace(' ', "_").replace('/', "-").replace('+', "plus");
+                    let safe = layout
+                        .replace(' ', "_")
+                        .replace('/', "-")
+                        .replace('+', "plus");
                     if let Some(png) = crate::export::png_bytes(&cv) {
                         let _ = std::fs::write(dir.join(format!("{safe}__{lv}.png")), png);
                     }

@@ -1,12 +1,4 @@
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.pytest_cache/
-.coverage
-dist/
-build/
-*.egg-info/
+target/
+*.tmp
 .DS_Store
 *.swp
-*.tmp

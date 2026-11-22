@@ -1,3 +1,17 @@
+# Upgrading to NIRUPRES 3.0.0
+
+3.0.0 keeps project format 9 and Markdown format 2; decks open unchanged, and
+decks saved by 3.0 open in 2.x.
+
+- Run `./install.sh` from the release (or `nirux extras update`). It installs
+  one static binary in `~/.local/bin/nirupres` and removes the 2.x code,
+  launcher script and virtual environment from `~/.local/share/nirupres`.
+  Preferences, recent files, the profile and autosave stay.
+- Python, PySide6 and python-pptx are no longer needed.
+- Video slides need `mpv` (and `yt-dlp` for web links); without it the
+  poster frame is shown.
+- Wayland: run under XWayland (NIRUPRES draws its windows with X11).
+
 # Upgrading to NIRUPRES 2.4.0
 
 2.4.0 keeps project format 9 and Markdown format 2; decks open unchanged.

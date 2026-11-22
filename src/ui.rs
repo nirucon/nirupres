@@ -40,18 +40,44 @@ pub fn text_w(face: &Arc<Face>, px: f32, s: &str, spacing: f32) -> f32 {
 }
 
 /// Draw `s` with its top at `y`; returns the width.
-pub fn text(cv: &mut Canvas, face: &Arc<Face>, px: f32, x: f32, y: f32, s: &str, color: u32) -> f32 {
+pub fn text(
+    cv: &mut Canvas,
+    face: &Arc<Face>,
+    px: f32,
+    x: f32,
+    y: f32,
+    s: &str,
+    color: u32,
+) -> f32 {
     if s.is_empty() {
         return 0.0;
     }
     let mut p = RasterPainter { cv };
     let base = y + face.ascent(px);
-    textfit::draw_plain(&mut p, face, px, x.round(), base.round(), s, Rgba::hex(color), 400)
+    textfit::draw_plain(
+        &mut p,
+        face,
+        px,
+        x.round(),
+        base.round(),
+        s,
+        Rgba::hex(color),
+        400,
+    )
 }
 
 /// Letter-spaced text (labels like "SPEAKER NOTES").
 #[allow(clippy::too_many_arguments)]
-pub fn text_spaced(cv: &mut Canvas, face: &Arc<Face>, px: f32, x: f32, y: f32, s: &str, color: u32, spacing: f32) -> f32 {
+pub fn text_spaced(
+    cv: &mut Canvas,
+    face: &Arc<Face>,
+    px: f32,
+    x: f32,
+    y: f32,
+    s: &str,
+    color: u32,
+    spacing: f32,
+) -> f32 {
     if spacing == 0.0 {
         return text(cv, face, px, x, y, s, color);
     }
@@ -70,7 +96,16 @@ pub fn line_h(face: &Arc<Face>, px: f32) -> f32 {
 
 /// Text vertically centred in `r`, aligned left (0), centre (1) or right (2).
 #[allow(clippy::too_many_arguments)]
-pub fn text_in(cv: &mut Canvas, face: &Arc<Face>, px: f32, r: Rect, s: &str, color: u32, align: u8, spacing: f32) {
+pub fn text_in(
+    cv: &mut Canvas,
+    face: &Arc<Face>,
+    px: f32,
+    r: Rect,
+    s: &str,
+    color: u32,
+    align: u8,
+    spacing: f32,
+) {
     let s = elide(face, px, s, r.w as f32, spacing);
     let w = text_w(face, px, &s, spacing);
     let x = match align {
@@ -166,7 +201,16 @@ impl Paint<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn button(&mut self, r: Rect, s: &str, kind: BtnKind, hover: bool, focus: bool, enabled: bool, checked: bool) {
+    pub fn button(
+        &mut self,
+        r: Rect,
+        s: &str,
+        kind: BtnKind,
+        hover: bool,
+        focus: bool,
+        enabled: bool,
+        checked: bool,
+    ) {
         let c = self.c;
         let (mut bg, mut border, mut fg) = match kind {
             BtnKind::Primary => (c.fg, c.fg, c.on_accent),
@@ -228,15 +272,38 @@ impl Paint<'_> {
         if on {
             // The check mark.
             let m = c.on_accent;
-            let pts = [(3, 7), (4, 8), (5, 9), (6, 10), (7, 9), (8, 8), (9, 7), (10, 6), (11, 5)];
+            let pts = [
+                (3, 7),
+                (4, 8),
+                (5, 9),
+                (6, 10),
+                (7, 9),
+                (8, 8),
+                (9, 7),
+                (10, 6),
+                (11, 5),
+            ];
             for (dx, dy) in pts {
                 self.cv.fill(Rect::new(b.x + dx - 1, b.y + dy - 2, 2, 2), m);
             }
         }
-        let fg = if enabled { blend(c.fg, c.bg, 0.08) } else { c.disabled };
+        let fg = if enabled {
+            blend(c.fg, c.bg, 0.08)
+        } else {
+            c.disabled
+        };
         let px = self.px;
         let f = self.f.sans.clone();
-        text_in(self.cv, &f, px, Rect::new(r.x + 23, r.y, r.w - 23, r.h), s, fg, 0, 0.0);
+        text_in(
+            self.cv,
+            &f,
+            px,
+            Rect::new(r.x + 23, r.y, r.w - 23, r.h),
+            s,
+            fg,
+            0,
+            0.0,
+        );
     }
 
     pub fn check_w(&self, s: &str) -> i32 {
@@ -266,20 +333,42 @@ impl Paint<'_> {
         self.cv.fill(r, bg);
         self.cv.frame(r, border);
         let dd = Rect::new(r.x + r.w - 30, r.y + 1, 29, r.h - 2);
-        self.cv.fill(dd, if hover && enabled { c.hover } else { blend(c.input, c.fg, 0.04) });
-        self.cv.fill(Rect::new(dd.x, dd.y, 1, dd.h), c.border_strong);
-        self.chevron(dd.x + dd.w / 2, dd.y + dd.h / 2 - 1, if enabled { c.fg } else { c.disabled });
+        self.cv.fill(
+            dd,
+            if hover && enabled {
+                c.hover
+            } else {
+                blend(c.input, c.fg, 0.04)
+            },
+        );
+        self.cv
+            .fill(Rect::new(dd.x, dd.y, 1, dd.h), c.border_strong);
+        self.chevron(
+            dd.x + dd.w / 2,
+            dd.y + dd.h / 2 - 1,
+            if enabled { c.fg } else { c.disabled },
+        );
         let fg = if enabled { c.fg } else { c.disabled };
         let f = self.f.sans.clone();
         let px = self.px;
-        text_in(self.cv, &f, px, Rect::new(r.x + 8, r.y, r.w - 44, r.h), s, fg, 0, 0.0);
+        text_in(
+            self.cv,
+            &f,
+            px,
+            Rect::new(r.x + 8, r.y, r.w - 44, r.h),
+            s,
+            fg,
+            0,
+            0.0,
+        );
     }
 
     pub fn slider(&mut self, r: Rect, min: i32, max: i32, v: i32, hover: bool, focus: bool) {
         let c = self.c;
         let cy = r.y + r.h / 2;
         let g = Rect::new(r.x + 7, cy - 2, (r.w - 14).max(1), 4);
-        self.cv.round_rect(g, 2, if hover { 0x414141 } else { 0x333333 });
+        self.cv
+            .round_rect(g, 2, if hover { 0x414141 } else { 0x333333 });
         let t = if max > min {
             (v - min) as f32 / (max - min) as f32
         } else {
@@ -287,10 +376,14 @@ impl Paint<'_> {
         };
         let hx = g.x + (t * g.w as f32) as i32;
         let col = if hover || focus { 0xffffff } else { 0xdddddd };
-        self.cv
-            .ellipse_aa(crate::paint::RectF::new(hx as f32 - 7.0, cy as f32 - 7.0, 14.0, 14.0), Rgba::hex(if focus { 0xffffff } else { 0xeeeeee }));
-        self.cv
-            .ellipse_aa(crate::paint::RectF::new(hx as f32 - 6.0, cy as f32 - 6.0, 12.0, 12.0), Rgba::hex(col));
+        self.cv.ellipse_aa(
+            crate::paint::RectF::new(hx as f32 - 7.0, cy as f32 - 7.0, 14.0, 14.0),
+            Rgba::hex(if focus { 0xffffff } else { 0xeeeeee }),
+        );
+        self.cv.ellipse_aa(
+            crate::paint::RectF::new(hx as f32 - 6.0, cy as f32 - 6.0, 12.0, 12.0),
+            Rgba::hex(col),
+        );
         let _ = c;
     }
 
@@ -512,7 +605,13 @@ impl Edit {
 
     /// Keyboard editing. `vmove` moves the cursor up/down by visual lines
     /// for a multi-line edit (given by the caller's layout).
-    pub fn key(&mut self, sym: u32, state: u16, ch: Option<char>, vmove: &dyn Fn(usize, i32, Option<f32>) -> (usize, f32)) -> EditResult {
+    pub fn key(
+        &mut self,
+        sym: u32,
+        state: u16,
+        ch: Option<char>,
+        vmove: &dyn Fn(usize, i32, Option<f32>) -> (usize, f32),
+    ) -> EditResult {
         use crate::keys::*;
         let shift = state & crate::x::SHIFT != 0;
         let ctrl = state & crate::x::CTRL != 0;
@@ -599,11 +698,19 @@ impl Edit {
                 moved(self, to)
             }
             K_HOME => {
-                let to = if self.multiline { self.line_start(self.cur) } else { 0 };
+                let to = if self.multiline {
+                    self.line_start(self.cur)
+                } else {
+                    0
+                };
                 moved(self, to)
             }
             K_END => {
-                let to = if self.multiline { self.line_end(self.cur) } else { n };
+                let to = if self.multiline {
+                    self.line_end(self.cur)
+                } else {
+                    n
+                };
                 moved(self, to)
             }
             K_UP | K_DOWN | K_PRIOR | K_NEXT if self.multiline => {
@@ -797,14 +904,36 @@ impl<T: Clone> Popup<T> {
         cv.frame(r, 0x454545.max(c.border_strong));
         let f_rows = self.filtered();
         cv.push_clip_rect(r.inset(1));
-        for (k, &i) in f_rows.iter().skip(self.scroll).take(self.visible()).enumerate() {
-            let row = Rect::new(r.x + 4, r.y + 4 + k as i32 * self.row_h, r.w - 8, self.row_h);
+        for (k, &i) in f_rows
+            .iter()
+            .skip(self.scroll)
+            .take(self.visible())
+            .enumerate()
+        {
+            let row = Rect::new(
+                r.x + 4,
+                r.y + 4 + k as i32 * self.row_h,
+                r.w - 8,
+                self.row_h,
+            );
             let (label, act) = &self.items[i];
             if act.is_none() {
                 if label.is_empty() {
-                    cv.fill(Rect::new(row.x + 4, row.y + row.h / 2, row.w - 8, 1), c.border_strong);
+                    cv.fill(
+                        Rect::new(row.x + 4, row.y + row.h / 2, row.w - 8, 1),
+                        c.border_strong,
+                    );
                 } else {
-                    text_in(cv, &f.mono_bold, 10.0, Rect::new(row.x + 6, row.y, row.w - 12, row.h), label, c.label, 0, 0.7);
+                    text_in(
+                        cv,
+                        &f.mono_bold,
+                        10.0,
+                        Rect::new(row.x + 6, row.y, row.w - 12, row.h),
+                        label,
+                        c.label,
+                        0,
+                        0.7,
+                    );
                 }
                 continue;
             }
@@ -813,7 +942,16 @@ impl<T: Clone> Popup<T> {
                 cv.fill(row, c.fg);
             }
             let col = if hot { c.on_accent } else { c.fg };
-            text_in(cv, &f.sans, px, Rect::new(row.x + 10, row.y, row.w - 20, row.h), label, col, 0, 0.0);
+            text_in(
+                cv,
+                &f.sans,
+                px,
+                Rect::new(row.x + 10, row.y, row.w - 20, row.h),
+                label,
+                col,
+                0,
+                0.0,
+            );
         }
         cv.pop_clip_rect();
         if f_rows.len() > self.visible() {
@@ -827,7 +965,16 @@ impl<T: Clone> Popup<T> {
             let fr = Rect::new(r.x, r.y - 24, r.w.min(260), 22);
             cv.fill(fr, c.input);
             cv.frame(fr, c.focus);
-            text_in(cv, &f.sans, px, fr.inset(4), &format!("Find: {}", self.filter), c.fg, 0, 0.0);
+            text_in(
+                cv,
+                &f.sans,
+                px,
+                fr.inset(4),
+                &format!("Find: {}", self.filter),
+                c.fg,
+                0,
+                0.0,
+            );
         }
     }
 }
@@ -860,12 +1007,24 @@ pub fn tooltip(cv: &mut Canvas, c: &Chrome, f: &Fonts, px: f32, x: i32, y: i32, 
     let lh = line_h(&f.sans, px).ceil() as i32 + 2;
     let h = lines.len() as i32 * lh + 10;
     let bx = x.min(cv.w - w - 4).max(2);
-    let by = if y + 22 + h < cv.h { y + 22 } else { (y - h - 6).max(2) };
+    let by = if y + 22 + h < cv.h {
+        y + 22
+    } else {
+        (y - h - 6).max(2)
+    };
     let r = Rect::new(bx, by, w, h);
     cv.reset_clip();
     cv.fill(r, blend(c.bg, c.fg, 0.10));
     cv.frame(r, c.border_strong);
     for (i, l) in lines.iter().enumerate() {
-        text(cv, &f.sans, px, (bx + 8) as f32, (by + 5 + i as i32 * lh) as f32, l, c.fg);
+        text(
+            cv,
+            &f.sans,
+            px,
+            (bx + 8) as f32,
+            (by + 5 + i as i32 * lh) as f32,
+            l,
+            c.fg,
+        );
     }
 }

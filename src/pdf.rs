@@ -150,7 +150,8 @@ impl PdfDoc {
             height_pt,
         };
         d.font_obj = d.add(
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_vec(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
+                .to_vec(),
         );
         d
     }
@@ -182,9 +183,7 @@ impl PdfDoc {
             lx: 0.0,
             ly: 0.0,
         };
-        let bb = face
-            .ttf
-            .outline_glyph(ttf_parser::GlyphId(gid), &mut po)?;
+        let bb = face.ttf.outline_glyph(ttf_parser::GlyphId(gid), &mut po)?;
         po.s.push_str("f\n");
         let pad = 0.25 * face.upem;
         let dict = format!(
@@ -204,7 +203,8 @@ impl PdfDoc {
             return o;
         }
         let f = a as f32 / 255.0;
-        let o = self.add(format!("<< /Type /ExtGState /ca {} /CA {} >>", num(f), num(f)).into_bytes());
+        let o =
+            self.add(format!("<< /Type /ExtGState /ca {} /CA {} >>", num(f), num(f)).into_bytes());
         self.alphas.insert(a, o);
         o
     }
@@ -229,7 +229,9 @@ impl PdfDoc {
             .chunks_exact(4)
             .flat_map(|p| [p[0], p[1], p[2]])
             .collect();
-        let sm = smask.map(|o| format!(" /SMask {o} 0 R")).unwrap_or_default();
+        let sm = smask
+            .map(|o| format!(" /SMask {o} 0 R"))
+            .unwrap_or_default();
         if !alpha {
             if let Some(jpg) = crate::images::encode_jpeg_rgb(img.w, img.h, &rgb, 90) {
                 return self.add_stream(
@@ -301,7 +303,9 @@ impl PdfDoc {
             out.extend_from_slice(b"\nendobj\n");
         }
         let xref = out.len();
-        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", self.objs.len()).as_bytes());
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", self.objs.len()).as_bytes(),
+        );
         for off in offsets.iter().skip(1) {
             out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
         }

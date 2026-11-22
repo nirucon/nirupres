@@ -64,7 +64,7 @@ fn write_val(v: &Value, indent: Option<usize>, level: usize, ascii: bool, out: &
             out.push('[');
             for (i, x) in a.iter().enumerate() {
                 if i > 0 {
-                    out.push(if indent.is_some() { ',' } else { ',' });
+                    out.push(',');
                     if indent.is_none() {
                         out.push(' ');
                     }
@@ -170,7 +170,8 @@ pub fn load_project(path: &Path, extract_dir: &Path) -> Result<Obj, String> {
     let mut data: Value;
     if zip::is_zip(path) {
         let root = std::fs::canonicalize(extract_dir).unwrap_or_else(|_| extract_dir.to_path_buf());
-        let mut z = zip::Reader::open(path).map_err(|e| format!("Invalid NIRUPRES package: {e}"))?;
+        let mut z =
+            zip::Reader::open(path).map_err(|e| format!("Invalid NIRUPRES package: {e}"))?;
         if z.entries.len() > MAX_ASSETS + 8 {
             return Err("Project package contains too many files.".into());
         }
@@ -208,10 +209,13 @@ pub fn load_project(path: &Path, extract_dir: &Path) -> Result<Obj, String> {
             return Err("Invalid NIRUPRES package: project.json is missing.".into());
         };
         if assets > MAX_ASSETS {
-            return Err(format!("Project contains too many assets (maximum {MAX_ASSETS})."));
+            return Err(format!(
+                "Project contains too many assets (maximum {MAX_ASSETS})."
+            ));
         }
         let bytes = z.read(pi)?;
-        let text = String::from_utf8(bytes).map_err(|_| "project.json is not UTF-8.".to_string())?;
+        let text =
+            String::from_utf8(bytes).map_err(|_| "project.json is not UTF-8.".to_string())?;
         data = serde_json::from_str(&text).map_err(|e| format!("Invalid project.json: {e}"))?;
         validate_project_data(&data)?;
         for i in 0..z.entries.len() {
@@ -239,7 +243,10 @@ pub fn load_project(path: &Path, extract_dir: &Path) -> Result<Obj, String> {
                         let nv = if !safe_zip_name(&rel) || rel.contains('/') {
                             String::new()
                         } else {
-                            root.join("assets").join(&rel).to_string_lossy().into_owned()
+                            root.join("assets")
+                                .join(&rel)
+                                .to_string_lossy()
+                                .into_owned()
                         };
                         s.insert(field.into(), Value::String(nv));
                     }
@@ -282,7 +289,11 @@ pub fn has_scheme(s: &str) -> bool {
 }
 
 /// `_optimize_asset`: (asset file name, bytes before, bytes after, data).
-pub fn optimize_asset(src: &Path, quality: &str, keep: bool) -> Result<(String, u64, u64, Vec<u8>), String> {
+pub fn optimize_asset(
+    src: &Path,
+    quality: &str,
+    keep: bool,
+) -> Result<(String, u64, u64, Vec<u8>), String> {
     let data = std::fs::read(src).map_err(|e| format!("{}: {e}", src.display()))?;
     let before = data.len() as u64;
     let ext_of = |p: &Path| {
@@ -293,17 +304,23 @@ pub fn optimize_asset(src: &Path, quality: &str, keep: bool) -> Result<(String, 
     if quality == "ORIGINAL" || keep {
         let digest = images::sha256_hex(&data);
         let name = if keep {
-            src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+            src.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
         } else {
             format!("{}{}", &digest[..20], ext_of(src))
         };
         return Ok((name, before, before, data));
     }
-    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = src
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let info = images::info_bytes(&data)
         .filter(|i| i.w > 0 && i.h > 0 && (i.w as u64) * (i.h as u64) <= MAX_IMAGE_PIXELS)
         .ok_or_else(|| format!("Unsupported or excessively large image: {name}"))?;
-    let mut img = images::decode(&data, None).ok_or_else(|| format!("Could not decode image: {name}"))?;
+    let mut img =
+        images::decode(&data, None).ok_or_else(|| format!("Could not decode image: {name}"))?;
     drop(data);
     let max_edge = if quality == "HIGH" { 4096 } else { 3200 };
     if img.w.max(img.h) > max_edge {
@@ -325,7 +342,12 @@ pub fn optimize_asset(src: &Path, quality: &str, keep: bool) -> Result<(String, 
 
 /// Save `data` to `path` as a verified package. `extract` is the folder
 /// assets of the open package live in: those are kept byte for byte.
-pub fn save_project(data: &Obj, path: &Path, quality: &str, extract: Option<&Path>) -> Result<SaveStats, String> {
+pub fn save_project(
+    data: &Obj,
+    path: &Path,
+    quality: &str,
+    extract: Option<&Path>,
+) -> Result<SaveStats, String> {
     let mut payload = data.clone();
     payload.insert("format".into(), Value::from(FORMAT));
     payload.insert("appVersion".into(), Value::from(VERSION));
@@ -334,9 +356,8 @@ pub fn save_project(data: &Obj, path: &Path, quality: &str, extract: Option<&Pat
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
     }
-    let extract_assets = extract.map(|e| {
-        std::fs::canonicalize(e.join("assets")).unwrap_or_else(|_| e.join("assets"))
-    });
+    let extract_assets = extract
+        .map(|e| std::fs::canonicalize(e.join("assets")).unwrap_or_else(|_| e.join("assets")));
     let mut used: Vec<(String, String)> = Vec::new();
     let mut blobs: Vec<(String, Vec<u8>)> = Vec::new();
     let mut files: Vec<(String, PathBuf)> = Vec::new();
@@ -434,7 +455,8 @@ pub fn save_project(data: &Obj, path: &Path, quality: &str, extract: Option<&Pat
             if r.entries[i].name == "project.json" {
                 project = Some(r.read(i)?);
             } else {
-                r.extract(i, &mut sink).map_err(|e| format!("ZIP verification failed: {e}"))?;
+                r.extract(i, &mut sink)
+                    .map_err(|e| format!("ZIP verification failed: {e}"))?;
             }
         }
         let probe: Value = serde_json::from_slice(&project.ok_or("ZIP verification failed.")?)
@@ -457,7 +479,10 @@ mod tests {
     fn python_json_formatting() {
         let v: Value = serde_json::from_str(r#"{"a": [1, 0.5, "å"], "b": {}}"#).unwrap();
         assert_eq!(py_json(&v), r#"{"a": [1, 0.5, "\u00e5"], "b": {}}"#);
-        assert_eq!(py_json_project(&v), "{\n  \"a\": [\n    1,\n    0.5,\n    \"å\"\n  ],\n  \"b\": {}\n}");
+        assert_eq!(
+            py_json_project(&v),
+            "{\n  \"a\": [\n    1,\n    0.5,\n    \"å\"\n  ],\n  \"b\": {}\n}"
+        );
     }
 
     #[test]

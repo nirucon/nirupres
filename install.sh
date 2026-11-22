@@ -1,151 +1,133 @@
 #!/bin/sh
+# NIRUPRES installer.
+#
+#   ./install.sh            install the prebuilt static binary (downloaded from
+#                           the GitHub release and checked against SHA256SUMS,
+#                           or taken from beside this script / target/release)
+#   ./install.sh --build    build from this checkout with cargo instead
+#
+# Installs ~/.local/bin/nirupres, the desktop entry, icon and the
+# application/x-nirupres MIME type. A NIRUPRES 2.x (Python) installation is
+# replaced cleanly: its code and virtual environment are removed, your
+# preferences, recent files and autosave in ~/.local/share/nirupres stay.
 set -eu
 
-VERSION="2.4.0"
+VERSION_DEFAULT="3.0.0"
+MODE=auto
+for arg in "$@"; do
+    case "$arg" in
+        --build) MODE=build ;;
+        -h|--help) printf '%s\n' "Usage: ./install.sh [--build]"; exit 0 ;;
+        *) printf 'nirupres install: unknown option %s\n' "$arg" >&2; exit 2 ;;
+    esac
+done
+
+say() { printf '%s\n' "$*"; }
+die() { say "nirupres install: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1; }
+
+[ "$(id -u)" != 0 ] || die 'run ./install.sh as your desktop user'
 SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$SRC"
 DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
 DEST="$DATA_ROOT/nirupres"
 BIN_DIR="$HOME/.local/bin"
 BIN="$BIN_DIR/nirupres"
 APP_DIR="$DATA_ROOT/applications"
-DESKTOP="$APP_DIR/nirupres.desktop"
 ICON_DIR="$DATA_ROOT/icons/hicolor/scalable/apps"
 MIME_DIR="$DATA_ROOT/mime/packages"
-MIME="$MIME_DIR/nirupres.xml"
-ICON="$ICON_DIR/nirupres.svg"
-VENV="$DEST/.venv"
-STAGE=""
-BACKUP=""
-OLD_VERSION="none"
 
-fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
-cleanup() { [ -z "$STAGE" ] || [ ! -d "$STAGE" ] || rm -rf -- "$STAGE"; [ -z "$BACKUP" ] || [ ! -d "$BACKUP" ] || rm -rf -- "$BACKUP"; }
-restore() {
-    [ -n "$BACKUP" ] && [ -d "$BACKUP" ] || return 0
-    rm -rf -- "$DEST/nirupres" "$DEST/tests"
-    rm -f -- "$DEST/run.sh" "$DEST/requirements.txt" "$BIN" "$DESKTOP" "$ICON" "$MIME"
-    [ ! -d "$BACKUP/nirupres" ] || mv -- "$BACKUP/nirupres" "$DEST/nirupres"
-    [ ! -d "$BACKUP/tests" ] || mv -- "$BACKUP/tests" "$DEST/tests"
-    [ ! -f "$BACKUP/run.sh" ] || mv -- "$BACKUP/run.sh" "$DEST/run.sh"
-    [ ! -f "$BACKUP/requirements.txt" ] || mv -- "$BACKUP/requirements.txt" "$DEST/requirements.txt"
-    [ ! -f "$BACKUP/nirupres-bin" ] || mv -- "$BACKUP/nirupres-bin" "$BIN"
-    [ ! -f "$BACKUP/nirupres.desktop" ] || mv -- "$BACKUP/nirupres.desktop" "$DESKTOP"
-    [ ! -f "$BACKUP/nirupres.svg" ] || { mkdir -p -- "$ICON_DIR"; mv -- "$BACKUP/nirupres.svg" "$ICON"; }
-    [ ! -f "$BACKUP/nirupres.xml" ] || { mkdir -p -- "$MIME_DIR"; mv -- "$BACKUP/nirupres.xml" "$MIME"; }
-}
-abort_install() { msg=$1; restore || true; fail "$msg"; }
-trap cleanup EXIT HUP INT TERM
+VERSION="${NIRUPRES_VERSION:-}"
+if [ -z "$VERSION" ] && [ -f Cargo.toml ]; then
+    VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+fi
+[ -n "$VERSION" ] || VERSION=$VERSION_DEFAULT
 
-os_name="Linux"
-if [ -r /etc/os-release ]; then os_name=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | head -n 1 | sed 's/^"//;s/"$//'); [ -n "$os_name" ] || os_name="Linux"; fi
-shell_name=${SHELL##*/}; [ -n "$shell_name" ] || shell_name="unknown"
-
-printf 'NIRUPRES %s Release Gate installer\n\n' "$VERSION"
-printf 'System\n  OS ............. %s\n  Shell .......... %s\n' "$os_name" "$shell_name"
-command -v python3 >/dev/null 2>&1 || fail "python3 was not found in PATH."
-mkdir -p -- "$DATA_ROOT" "$BIN_DIR" "$APP_DIR" "$ICON_DIR" "$MIME_DIR" "$DEST" || fail "Could not create install directories."
-if [ -x "$VENV/bin/python" ] && [ -f "$DEST/nirupres/__init__.py" ]; then OLD_VERSION=$( (cd / && PYTHONPATH="$DEST" "$VENV/bin/python" -c 'import nirupres; print(nirupres.__version__)') 2>/dev/null || printf unknown); fi
-printf '  Installed ...... %s\n  Target ......... %s\n\n' "$OLD_VERSION" "$VERSION"
-
-# Debian ships venv's ensurepip in python3-venv; Arch and Void include it with
-# Python. Without it `python3 -m venv` leaves a venv that has no pip.
-ensure_venv_support() {
-    python3 -c 'import ensurepip' >/dev/null 2>&1 && return 0
-    command -v apt-get >/dev/null 2>&1 || fail "Python venv support (ensurepip) is missing; install it with your package manager."
-    if [ "${NIRUPRES_ASSUME_YES:-${NIRUX_ASSUME_YES:-0}}" != 1 ]; then
-        [ -t 0 ] || fail "python3-venv is missing. Install it with: sudo apt-get install python3-venv (or rerun with NIRUPRES_ASSUME_YES=1)."
-        printf '      python3-venv is required. Install it with sudo apt-get? [Y/n] '
-        read -r answer || answer=n
-        case "$answer" in [nN]*) fail "python3-venv is required." ;; esac
-    fi
-    printf '      Installing python3-venv...\n'
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv || fail "Could not install python3-venv."
+asset() {
+    # A data file: beside this script (release) or in the checkout.
+    for p in "$SRC/$1" "$SRC/assets/$1" "$SRC/mime/$1"; do
+        [ -f "$p" ] && { printf '%s\n' "$p"; return 0; }
+    done
+    return 1
 }
 
-printf '[1/6] Checking Python environment...\n'
-# A venv whose creation failed half-way has a python but no pip; rebuild it.
-if [ -x "$VENV/bin/python" ] && ! "$VENV/bin/python" -m pip --version >/dev/null 2>&1; then
-    printf '      Rebuilding an incomplete virtual environment...\n'
-    rm -rf -- "$VENV"
+TMP=""
+trap '[ -z "$TMP" ] || rm -rf "$TMP"' EXIT
+if [ "$MODE" = build ]; then
+    need cargo || die 'Rust/cargo is required for --build'
+    say 'Building NIRUPRES…'
+    cargo build --release --locked
+    BIN_SRC="$SRC/target/release/nirupres"
+elif [ -x "$SRC/nirupres" ] && [ ! -d "$SRC/nirupres" ]; then
+    BIN_SRC="$SRC/nirupres"
+elif [ -x "$SRC/target/release/nirupres" ]; then
+    BIN_SRC="$SRC/target/release/nirupres"
+else
+    [ "$(uname -m)" = x86_64 ] || die "no prebuilt binary for $(uname -m); use ./install.sh --build"
+    need curl || need wget || die 'curl or wget is required to download the release binary'
+    need sha256sum || die 'sha256sum is required to verify the release binary'
+    TMP=$(mktemp -d)
+    BASE="https://github.com/nirucon/nirupres/releases/download/v$VERSION"
+    say "Downloading NIRUPRES $VERSION…"
+    for f in nirupres SHA256SUMS; do
+        if need curl; then
+            curl -fsSL --retry 3 -o "$TMP/$f" "$BASE/$f" || die "could not download $f"
+        else
+            wget -qO "$TMP/$f" "$BASE/$f" || die "could not download $f"
+        fi
+    done
+    expected=$(awk '$2 == "nirupres" || $2 == "*nirupres" { print $1; exit }' "$TMP/SHA256SUMS")
+    actual=$(sha256sum "$TMP/nirupres" | awk '{print $1}')
+    [ -n "$expected" ] && [ "$expected" = "$actual" ] || die 'the downloaded binary failed SHA-256 verification'
+    say 'SHA-256 verification passed.'
+    BIN_SRC="$TMP/nirupres"
 fi
-if [ ! -x "$VENV/bin/python" ]; then
-    ensure_venv_support
-    printf '      Creating virtual environment...\n'
-    python3 -m venv "$VENV" || fail "Could not create Python virtual environment. Ensure venv support is installed."
+chmod +x "$BIN_SRC"
+if [ -f "$SRC/SHA256SUMS" ] && [ "$BIN_SRC" = "$SRC/nirupres" ]; then
+    expected=$(awk '$2 == "nirupres" || $2 == "*nirupres" { print $1; exit }' "$SRC/SHA256SUMS")
+    actual=$(sha256sum "$BIN_SRC" | awk '{print $1}')
+    [ "$expected" = "$actual" ] || die 'the local binary failed SHA-256 verification'
 fi
-"$VENV/bin/python" -c 'import sys; print("      Python",sys.version.split()[0])' || fail "Virtual environment is not usable."
+got=$("$BIN_SRC" --version 2>/dev/null | awk '{print $NF}')
+[ "$got" = "$VERSION" ] || die "the binary reports version '$got', expected $VERSION"
 
-printf '[2/6] Checking dependencies...\n'
-if ! "$VENV/bin/python" -c 'from importlib.metadata import version; from packaging.version import Version; from PySide6.QtMultimedia import QMediaPlayer; from PySide6.QtMultimediaWidgets import QVideoWidget; from PySide6.QtWebEngineWidgets import QWebEngineView; q=Version(version("PySide6")); p=Version(version("python-pptx")); assert Version("6.7")<=q<Version("7") and Version("1.0")<=p<Version("2"); print(f"      OK — PySide6 {q} + Multimedia/WebEngine, python-pptx {p}")' 2>/dev/null; then
-    printf '      Installing/repairing release dependencies...\n'
-    "$VENV/bin/python" -m pip install -r "$SRC/requirements.txt" || fail "Dependency installation failed; installed application code was not changed."
+# The version installed before (a 2.x Python release keeps its version in
+# its package), for the organization profile of upgraded installations.
+OLD_VERSION=none
+if [ -f "$DEST/nirupres/__init__.py" ]; then
+    OLD_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$DEST/nirupres/__init__.py" | head -n 1)
+    [ -n "$OLD_VERSION" ] || OLD_VERSION=unknown
+elif [ -x "$BIN" ]; then
+    OLD_VERSION=$("$BIN" --version 2>/dev/null | awk '{print $NF}') || OLD_VERSION=unknown
 fi
-"$VENV/bin/python" -m pip check || fail "Python dependencies are inconsistent."
 
-printf '[3/6] Staging and validating release...\n'
-STAGE=$(mktemp -d "$HOME/.local/share/.nirupres-stage.XXXXXX") || fail "Could not create staging directory."
-cp -R -- "$SRC/nirupres" "$SRC/tests" "$SRC/run.sh" "$SRC/requirements.txt" "$STAGE/"
-cp -- "$SRC/mime/nirupres.xml" "$STAGE/nirupres.xml" || fail "Could not stage release."
-"$VENV/bin/python" -m compileall -q "$STAGE/nirupres" "$STAGE/tests" || fail "Staged release failed Python compilation."
-staged_version=$(cd / && PYTHONPATH="$STAGE" "$VENV/bin/python" -c 'import nirupres; print(nirupres.__version__)') || fail "Could not read staged version."
-[ "$staged_version" = "$VERSION" ] || fail "Staged version is $staged_version, expected $VERSION."
-QT_QPA_PLATFORM=offscreen PYTHONPATH="$STAGE" "$VENV/bin/python" "$STAGE/tests/release_gate.py" || fail "Staged release gate failed. Existing application was not changed."
+mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR" "$MIME_DIR" "$DEST"
+install -m 0755 "$BIN_SRC" "$BIN.tmp.$$"
+mv -f "$BIN.tmp.$$" "$BIN"
+install -m 0644 "$(asset nirupres.svg)" "$ICON_DIR/nirupres.svg"
+install -m 0644 "$(asset nirupres.xml)" "$MIME_DIR/nirupres.xml"
+sed "s|^Exec=nirupres|Exec=$BIN|; s|^TryExec=nirupres|TryExec=$BIN|; s|^Icon=nirupres|Icon=$ICON_DIR/nirupres.svg|" \
+    "$(asset nirupres.desktop)" > "$APP_DIR/nirupres.desktop"
+chmod 0644 "$APP_DIR/nirupres.desktop"
+need update-mime-database && update-mime-database "$DATA_ROOT/mime" >/dev/null 2>&1 || :
+need update-desktop-database && update-desktop-database "$APP_DIR" >/dev/null 2>&1 || :
 
-printf '[4/6] Creating rollback snapshot...\n'
-BACKUP=$(mktemp -d "$HOME/.local/share/.nirupres-backup.XXXXXX") || fail "Could not create rollback directory."
-[ ! -d "$DEST/nirupres" ] || mv -- "$DEST/nirupres" "$BACKUP/nirupres"
-[ ! -d "$DEST/tests" ] || mv -- "$DEST/tests" "$BACKUP/tests"
-[ ! -f "$DEST/run.sh" ] || mv -- "$DEST/run.sh" "$BACKUP/run.sh"
-[ ! -f "$DEST/requirements.txt" ] || mv -- "$DEST/requirements.txt" "$BACKUP/requirements.txt"
-[ ! -f "$BIN" ] || cp -p -- "$BIN" "$BACKUP/nirupres-bin"
-[ ! -f "$DESKTOP" ] || cp -p -- "$DESKTOP" "$BACKUP/nirupres.desktop"
-[ ! -f "$ICON" ] || cp -p -- "$ICON" "$BACKUP/nirupres.svg"
-[ ! -f "$MIME" ] || cp -p -- "$MIME" "$BACKUP/nirupres.xml"
+# Replace the Python release: its code and virtual environment go, user data stays.
+for old in "$DEST/nirupres" "$DEST/tests" "$DEST/.venv"; do
+    [ ! -d "$old" ] || rm -rf -- "$old"
+done
+rm -f -- "$DEST/run.sh" "$DEST/requirements.txt"
 
-printf '[5/6] Installing transactionally...\n'
-if ! mv -- "$STAGE/nirupres" "$DEST/nirupres" || ! mv -- "$STAGE/tests" "$DEST/tests" || ! cp -- "$STAGE/run.sh" "$STAGE/requirements.txt" "$DEST/"; then abort_install "Could not install release; previous managed files were restored."; fi
-chmod +x -- "$DEST/run.sh"
-cat > "$BIN" <<EOF
-#!/bin/sh
-exec "$DEST/run.sh" "\$@"
-EOF
-chmod +x -- "$BIN"
-cp -- "$DEST/nirupres/assets/nirupres.svg" "$ICON" || abort_install "Could not install application icon; previous managed files were restored."
-cp -- "$STAGE/nirupres.xml" "$MIME" || abort_install "Could not install MIME metadata; previous managed files were restored."
-command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$DATA_ROOT/mime" >/dev/null 2>&1 || :
-cat > "$DESKTOP" <<EOF
-[Desktop Entry]
-Type=Application
-Name=NIRUPRES
-Comment=Minimal presentation studio with NIRUX editor chrome and talk recording
-Exec=$BIN %f
-TryExec=$BIN
-Terminal=false
-Icon=$ICON
-Categories=Office;Presentation;
-MimeType=application/x-nirupres;
-Keywords=presentation;slides;deck;pdf;record;talk;
-EOF
-
-printf '[6/6] Verifying installed release...\n'
-if ! "$VENV/bin/python" -m compileall -q "$DEST/nirupres" "$DEST/tests"; then abort_install "Installed code failed compilation; previous managed files were restored."; fi
-installed_version=$( (cd / && PYTHONPATH="$DEST" "$VENV/bin/python" -c 'import nirupres; print(nirupres.__version__)') 2>/dev/null || true)
-[ "$installed_version" = "$VERSION" ] || abort_install "Installed version is $installed_version, expected $VERSION; previous managed files were restored."
-if ! QT_QPA_PLATFORM=offscreen PYTHONPATH="$DEST" "$VENV/bin/python" "$DEST/tests/release_gate.py"; then abort_install "Post-install release gate failed; previous managed files were restored."; fi
-# Validate the launcher from an unrelated cwd: this protects the UWSM/desktop regression.
-( cd /tmp && test -x "$BIN" && test -s "$ICON" && test -s "$MIME" && grep -F 'Icon=' "$DESKTOP" >/dev/null && grep -F 'MimeType=application/x-nirupres' "$DESKTOP" >/dev/null && grep -F 'cd "$ROOT"' "$DEST/run.sh" >/dev/null ) || abort_install "Launcher validation failed; previous managed files were restored."
-QT_QPA_PLATFORM=offscreen "$BIN" --version >/dev/null || abort_install "Installed CLI failed --version; previous managed files were restored."
-
-rm -rf -- "$BACKUP"; BACKUP=""; rm -rf -- "$STAGE"; STAGE=""; trap - EXIT HUP INT TERM
-# 2.2 organization profiles: an upgraded pre-2.2 installation keeps the
-# Uddevalla defaults it always had. Written once, never overwritten.
+# 2.2 organization profiles: an installation upgraded from 2.1 or earlier
+# keeps the Uddevalla defaults it always had. Written once, never overwritten.
 if [ ! -e "$DEST/profile.json" ]; then
     case "$OLD_VERSION" in
         1.*|2.0.*|2.1.*|unknown)
-            printf '{\n  "profile": "uddevalla",\n  "reason": "upgraded from %s"\n}\n' "$OLD_VERSION" > "$DEST/profile.json" || :
-            printf 'Profile: kept Uddevalla defaults for this upgraded installation (%s).\n' "$DEST/profile.json" ;;
+            printf '{\n  "profile": "uddevalla",\n  "reason": "upgraded from %s"\n}\n' "$OLD_VERSION" > "$DEST/profile.json" || : ;;
     esac
 fi
-printf '\nNIRUPRES %s installed successfully.\n' "$VERSION"
-if [ "$OLD_VERSION" != "none" ]; then printf 'Upgrade: %s -> %s\n' "$OLD_VERSION" "$VERSION"; fi
-printf 'User data, recent files, display preferences and the virtual environment were preserved.\nRun: nirupres\n'
+
+"$BIN" --version >/dev/null || die 'the installed binary does not run'
+say "NIRUPRES $VERSION installed at $BIN"
+[ "$OLD_VERSION" = none ] || say "Upgrade: $OLD_VERSION -> $VERSION (preferences, recent files and autosave were kept)"
+say 'Run: nirupres'

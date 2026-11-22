@@ -236,7 +236,9 @@ fn next_visible(data: &Obj, i: usize, d: i64) -> usize {
 impl Session {
     pub fn start(x: &mut X, data: Obj, cfg: Config, c: Chrome) -> x::Res<Self> {
         let f = Fonts::load().ok_or("no font")?;
-        let dual = cfg.online || cfg.presenter.name != cfg.audience.name || (cfg.presenter.x, cfg.presenter.y) != (cfg.audience.x, cfg.audience.y);
+        let dual = cfg.online
+            || cfg.presenter.name != cfg.audience.name
+            || (cfg.presenter.x, cfg.presenter.y) != (cfg.audience.x, cfg.audience.y);
         let start = nearest_visible(&data, cfg.start, 1);
         // The audience window.
         let am = cfg.audience.clone();
@@ -252,7 +254,18 @@ impl Session {
         } else {
             (am.x, am.y, am.w, am.h)
         };
-        let aid = x.create(ax, ay, aw as u16, ah as u16, AUDIENCE_TITLE, "nirupres-audience", "NIRUPRES", true, true, false)?;
+        let aid = x.create(
+            ax,
+            ay,
+            aw as u16,
+            ah as u16,
+            AUDIENCE_TITLE,
+            "nirupres-audience",
+            "NIRUPRES",
+            true,
+            true,
+            false,
+        )?;
         x::register_window(aid);
         if !cfg.online {
             x.initial_state(aid, true, false);
@@ -263,7 +276,18 @@ impl Session {
         let mut presenter = None;
         if dual {
             let pm = cfg.presenter.clone();
-            let pid = x.create(pm.x, pm.y, pm.w.max(640) as u16, pm.h.max(400) as u16, PRESENTER_TITLE, "nirupres-presenter", "NIRUPRES", false, true, false)?;
+            let pid = x.create(
+                pm.x,
+                pm.y,
+                pm.w.max(640) as u16,
+                pm.h.max(400) as u16,
+                PRESENTER_TITLE,
+                "nirupres-presenter",
+                "NIRUPRES",
+                false,
+                true,
+                false,
+            )?;
             x::register_window(pid);
             x.initial_state(pid, !cfg.online, cfg.online);
             x.map(pid);
@@ -311,14 +335,22 @@ impl Session {
             closing: false,
             share_checking: cfg.share_check,
             share_flash: None,
-            share_flash_req: if cfg.share_check { Some(now + Duration::from_millis(250)) } else { None },
+            share_flash_req: if cfg.share_check {
+                Some(now + Duration::from_millis(250))
+            } else {
+                None
+            },
             share_status_at: now,
             audience_viewable: None,
             last_watch: now,
             slide_frame: None,
             motion_start: now,
             motion_key: String::new(),
-            cursor_hide_at: if cfg.online { None } else { Some(now + Duration::from_millis(1500)) },
+            cursor_hide_at: if cfg.online {
+                None
+            } else {
+                Some(now + Duration::from_millis(1500))
+            },
             cursor_hidden: false,
             notes_px: crate::prefs::notes_px(default_px),
             notes_scroll: 0,
@@ -342,7 +374,14 @@ impl Session {
     }
 
     /// A windowed audience-only preview of the transition into `to`.
-    pub fn transition_preview(x: &mut X, data: Obj, from: usize, to: usize, c: Chrome, mon: Monitor) -> x::Res<Self> {
+    pub fn transition_preview(
+        x: &mut X,
+        data: Obj,
+        from: usize,
+        to: usize,
+        c: Chrome,
+        mon: Monitor,
+    ) -> x::Res<Self> {
         let cfg = Config {
             start: from,
             presenter: mon.clone(),
@@ -353,7 +392,18 @@ impl Session {
         };
         let f = Fonts::load().ok_or("no font")?;
         let (aw, ah) = (960, 540);
-        let id = x.create(cfg.audience.x + (cfg.audience.w - aw) / 2, cfg.audience.y + (cfg.audience.h - ah) / 2, aw as u16, ah as u16, "NIRUPRES — Transition Preview", "nirupres-preview", "NIRUPRES", false, false, false)?;
+        let id = x.create(
+            cfg.audience.x + (cfg.audience.w - aw) / 2,
+            cfg.audience.y + (cfg.audience.h - ah) / 2,
+            aw as u16,
+            ah as u16,
+            "NIRUPRES — Transition Preview",
+            "nirupres-preview",
+            "NIRUPRES",
+            false,
+            false,
+            false,
+        )?;
         x::register_window(id);
         x.map(id);
         let now = Instant::now();
@@ -442,7 +492,12 @@ impl Session {
     }
 
     fn slide(&self, i: usize) -> Obj {
-        self.deck().slides().get(i).and_then(|v| v.as_object()).cloned().unwrap_or_default()
+        self.deck()
+            .slides()
+            .get(i)
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn transition_for(&self, i: usize) -> String {
@@ -450,7 +505,10 @@ impl Session {
             return "NONE".into();
         }
         let s = self.slide(i);
-        let t = normalize_transition(s.get("transition").or(Some(&serde_json::json!("DECK"))), true);
+        let t = normalize_transition(
+            s.get("transition").or(Some(&serde_json::json!("DECK"))),
+            true,
+        );
         if t == "DECK" {
             normalize_transition(self.data.get("transition"), false)
         } else {
@@ -463,7 +521,10 @@ impl Session {
     }
 
     fn view_rect(&self) -> RectF {
-        render::aspect_rect(RectF::new(0.0, 0.0, self.asize.0 as f32, self.asize.1 as f32), &self.aspect())
+        render::aspect_rect(
+            RectF::new(0.0, 0.0, self.asize.0 as f32, self.asize.1 as f32),
+            &self.aspect(),
+        )
     }
 
     fn motion_wanted(&self) -> bool {
@@ -479,7 +540,10 @@ impl Session {
     /// The slide data with the Ken Burns pan applied.
     fn render_slide_data(&mut self) -> Obj {
         let mut s = self.slide(self.i);
-        if truthy(s.get("backgroundImage")) && s_get(&s, "backgroundMotion", "NONE") == "KEN BURNS" && !self.reduce_motion() {
+        if truthy(s.get("backgroundImage"))
+            && s_get(&s, "backgroundMotion", "NONE") == "KEN BURNS"
+            && !self.reduce_motion()
+        {
             let key = {
                 let id = s_get(&s, "id", "");
                 if id.is_empty() {
@@ -492,15 +556,23 @@ impl Session {
                 self.motion_key = key.clone();
                 self.motion_start = Instant::now();
             }
-            let phase = (self.motion_start.elapsed().as_secs_f32() * 1000.0 / KEN_BURNS_MS).min(1.0);
+            let phase =
+                (self.motion_start.elapsed().as_secs_f32() * 1000.0 / KEN_BURNS_MS).min(1.0);
             let ease = phase * phase * (3.0 - 2.0 * phase);
-            let dir = if key.chars().map(|c| c as u32).sum::<u32>() % 2 == 1 { -1.0 } else { 1.0 };
+            let dir = if key.chars().map(|c| c as u32).sum::<u32>() % 2 == 1 {
+                -1.0
+            } else {
+                1.0
+            };
             let drift = (ease - 0.5) * 0.12 * dir;
             let fx = (f_get(&s, "backgroundFocalX", 0.5) as f32 + drift).clamp(0.0, 1.0);
             let fy = (f_get(&s, "backgroundFocalY", 0.5) as f32 - drift * 0.35).clamp(0.0, 1.0);
             s.insert("backgroundFocalX".into(), serde_json::json!(fx));
             s.insert("backgroundFocalY".into(), serde_json::json!(fy));
-            s.insert("_backgroundZoom".into(), serde_json::json!(1.0 + 0.085 * ease));
+            s.insert(
+                "_backgroundZoom".into(),
+                serde_json::json!(1.0 + 0.085 * ease),
+            );
         }
         s
     }
@@ -597,7 +669,10 @@ impl Session {
         } else {
             Duration::ZERO
         };
-        self.clock.elapsed().saturating_sub(self.paused_total).saturating_sub(cur)
+        self.clock
+            .elapsed()
+            .saturating_sub(self.paused_total)
+            .saturating_sub(cur)
     }
 
     fn set_index(&mut self, x: &X, new_i: usize) {
@@ -672,7 +747,8 @@ impl Session {
             if d == -1 {
                 return Outcome::Running;
             }
-        } else if d == 1 && next_visible(&self.data, self.i, 1) == self.i && self.cinematic_close() {
+        } else if d == 1 && next_visible(&self.data, self.i, 1) == self.i && self.cinematic_close()
+        {
             self.end_black = true;
             self.begin_closing();
             self.dirty_all();
@@ -684,7 +760,11 @@ impl Session {
         } else if d == 999 {
             nearest_visible(&self.data, n.saturating_sub(1), -1)
         } else if d >= 10000 {
-            nearest_visible(&self.data, ((d - 10000) as usize).min(n.saturating_sub(1)), 1)
+            nearest_visible(
+                &self.data,
+                ((d - 10000) as usize).min(n.saturating_sub(1)),
+                1,
+            )
         } else {
             next_visible(&self.data, self.i, if d > 0 { 1 } else { -1 })
         };
@@ -750,7 +830,11 @@ impl Session {
             self.focus_mode = None;
         } else {
             self.focus_mode = Some(m);
-            self.radius = if m == FocusMode::Spotlight { 165.0 } else { 115.0 };
+            self.radius = if m == FocusMode::Spotlight {
+                165.0
+            } else {
+                115.0
+            };
             if self.point.is_none() {
                 let (w, h) = (self.asize.0 as f32, self.asize.1 as f32);
                 self.point = Some((w / 2.0, h / 2.0));
@@ -841,7 +925,12 @@ impl Session {
     fn zoom_rect_now(&self, z: &Zoom) -> RectF {
         let k = in_out_cubic(frac(z.start, z.dur));
         let l = |a: f32, b: f32| a + (b - a) * k;
-        RectF::new(l(z.from.x, z.to.x), l(z.from.y, z.to.y), l(z.from.w, z.to.w), l(z.from.h, z.to.h))
+        RectF::new(
+            l(z.from.x, z.to.x),
+            l(z.from.y, z.to.y),
+            l(z.from.w, z.to.w),
+            l(z.from.h, z.to.h),
+        )
     }
 
     fn cursor_activity(&mut self) {
@@ -942,12 +1031,20 @@ impl Session {
         }
         match c {
             Some('b') => {
-                let m = if self.blank == Some('B') { None } else { Some('B') };
+                let m = if self.blank == Some('B') {
+                    None
+                } else {
+                    Some('B')
+                };
                 self.set_blank(x, m);
                 return Outcome::Running;
             }
             Some('w') => {
-                let m = if self.blank == Some('W') { None } else { Some('W') };
+                let m = if self.blank == Some('W') {
+                    None
+                } else {
+                    Some('W')
+                };
                 self.set_blank(x, m);
                 return Outcome::Running;
             }
@@ -1019,7 +1116,11 @@ impl Session {
     pub fn event(&mut self, x: &mut X, ev: &Ev) -> Outcome {
         match ev {
             Ev::Configure(w, _, _, cw, ch) => {
-                let win = if *w == self.audience.id { Some(&mut self.audience) } else { self.presenter.as_mut().filter(|p| p.id == *w) };
+                let win = if *w == self.audience.id {
+                    Some(&mut self.audience)
+                } else {
+                    self.presenter.as_mut().filter(|p| p.id == *w)
+                };
                 if let Some(win) = win {
                     if *cw != win.cv.w || *ch != win.cv.h {
                         win.cv.resize(*cw, *ch);
@@ -1089,7 +1190,9 @@ impl Session {
                 }
                 return self.handle_key(x, *sym, *state, *ch);
             }
-            Ev::Motion { win, x: mx, y: my, .. } => {
+            Ev::Motion {
+                win, x: mx, y: my, ..
+            } => {
                 if *win == self.audience.id {
                     self.aim((*mx as f32, *my as f32));
                     self.cursor_activity();
@@ -1098,7 +1201,12 @@ impl Session {
                         x.set_cursor(self.audience.id, x.arrow_cursor);
                     }
                 } else {
-                    let h = self.hits.iter().rev().find(|(r, _)| r.contains(*mx, *my)).map(|(_, h)| *h);
+                    let h = self
+                        .hits
+                        .iter()
+                        .rev()
+                        .find(|(r, _)| r.contains(*mx, *my))
+                        .map(|(_, h)| *h);
                     if h != self.hover {
                         self.hover = h;
                         if let Some(p) = &mut self.presenter {
@@ -1112,7 +1220,14 @@ impl Session {
                     }
                 }
             }
-            Ev::Button { win, x: bx, y: by, button, press: true, .. } => {
+            Ev::Button {
+                win,
+                x: bx,
+                y: by,
+                button,
+                press: true,
+                ..
+            } => {
                 if self.preview_only {
                     return Outcome::Running;
                 }
@@ -1129,18 +1244,33 @@ impl Session {
                     }
                     if *button == 1 {
                         let left = *bx < self.asize.0 / 2;
-                        return self.handle_key(x, if left { crate::keys::K_LEFT } else { crate::keys::K_RIGHT }, 0, None);
+                        return self.handle_key(
+                            x,
+                            if left {
+                                crate::keys::K_LEFT
+                            } else {
+                                crate::keys::K_RIGHT
+                            },
+                            0,
+                            None,
+                        );
                     }
                     if *button == 4 || *button == 5 {
                         return Outcome::Running;
                     }
                 } else if *button == 4 || *button == 5 {
-                    self.notes_scroll = (self.notes_scroll + if *button == 4 { -40 } else { 40 }).max(0);
+                    self.notes_scroll =
+                        (self.notes_scroll + if *button == 4 { -40 } else { 40 }).max(0);
                     if let Some(p) = &mut self.presenter {
                         p.dirty = true;
                     }
                 } else if *button == 1 {
-                    let h = self.hits.iter().rev().find(|(r, _)| r.contains(*bx, *by)).map(|(_, h)| *h);
+                    let h = self
+                        .hits
+                        .iter()
+                        .rev()
+                        .find(|(r, _)| r.contains(*bx, *by))
+                        .map(|(_, h)| *h);
                     match h {
                         Some(PHit::Prev) => return self.navigate(x, -1),
                         Some(PHit::Next) => return self.navigate(x, 1),
@@ -1208,7 +1338,8 @@ impl Session {
         }
         let s = self.slide(self.i);
         let source = s_get(&s, "videoSource", "").trim().to_string();
-        let is_video = matches!(s_get(&s, "layout", "").as_str(), "VIDEO" | "VIDEO + TEXT") && !source.is_empty();
+        let is_video = matches!(s_get(&s, "layout", "").as_str(), "VIDEO" | "VIDEO + TEXT")
+            && !source.is_empty();
         if !is_video {
             if let Some(v) = self.video.take() {
                 v.stop(x);
@@ -1226,7 +1357,15 @@ impl Session {
         if let Some(v) = self.video.take() {
             v.stop(x);
         }
-        self.video = crate::video::Video::start(x, self.audience.id, rect, &source, b_get(&s, "videoAutoplay"), b_get(&s, "videoMuted"), key);
+        self.video = crate::video::Video::start(
+            x,
+            self.audience.id,
+            rect,
+            &source,
+            b_get(&s, "videoAutoplay"),
+            b_get(&s, "videoMuted"),
+            key,
+        );
     }
 
     // ------------------------------------------------------------ timers
@@ -1265,7 +1404,9 @@ impl Session {
         if let Some(t) = self.opening {
             if self.cover.is_some_and(|c| c.to >= 1.0 && c.from >= 1.0) {
                 let exposed = self.audience.exposed_at.is_some() && self.audience.mapped;
-                if self.opening_wait.is_none() && (exposed || t.elapsed() >= Duration::from_millis(OPEN_WAIT_MAX_MS)) {
+                if self.opening_wait.is_none()
+                    && (exposed || t.elapsed() >= Duration::from_millis(OPEN_WAIT_MAX_MS))
+                {
                     self.opening_wait = Some(now + Duration::from_millis(OPEN_SETTLE_MS));
                 }
                 match self.opening_wait {
@@ -1450,14 +1591,26 @@ impl Session {
     fn draw_view(&mut self, cv: &mut Canvas, dst: RectF, scale: f32, audience: bool) {
         let (aw, ah) = (self.asize.0.max(1) as f32, self.asize.1.max(1) as f32);
         let full = RectF::new(0.0, 0.0, aw, ah);
-        let clip = Rect::new(dst.x as i32, dst.y as i32, dst.w.ceil() as i32, dst.h.ceil() as i32);
+        let clip = Rect::new(
+            dst.x as i32,
+            dst.y as i32,
+            dst.w.ceil() as i32,
+            dst.h.ceil() as i32,
+        );
         cv.push_clip_rect(clip);
         if let Some(b) = self.blank {
             cv.fill(clip, if b == 'W' { 0xffffff } else { 0 });
             cv.pop_clip_rect();
             return;
         }
-        let map = |r: RectF| RectF::new(dst.x + r.x * scale, dst.y + r.y * scale, r.w * scale, r.h * scale);
+        let map = |r: RectF| {
+            RectF::new(
+                dst.x + r.x * scale,
+                dst.y + r.y * scale,
+                r.w * scale,
+                r.h * scale,
+            )
+        };
         self.frame();
         {
             let f2 = &self.slide_frame.as_ref().unwrap().3;
@@ -1542,7 +1695,15 @@ impl Session {
         let cw = ui::text_w(&mf, cp, &clock, 0.0);
         let ch = ui::line_h(&mf, cp);
         let yy = cy + tp * 0.35 + (cp * 1.8 - ch) / 2.0;
-        ui::text(cv, &mf, cp, cx - cw / 2.0, yy, &clock, blend(0, 0xF4F2ED, op * 0.65));
+        ui::text(
+            cv,
+            &mf,
+            cp,
+            cx - cw / 2.0,
+            yy,
+            &clock,
+            blend(0, 0xF4F2ED, op * 0.65),
+        );
     }
 
     fn draw_share_flash(&self, cv: &mut Canvas, r: RectF) {
@@ -1557,7 +1718,12 @@ impl Session {
         let label = "✓  SHARED WINDOW · AUDIENCE";
         let w = ui::text_w(&f, fpx, label, 0.0) + fpx * 1.4;
         let h = fpx * 2.0;
-        let badge = Rect::new((r.x + bw * 1.6) as i32, (r.y + bw * 1.6) as i32, w as i32, h as i32);
+        let badge = Rect::new(
+            (r.x + bw * 1.6) as i32,
+            (r.y + bw * 1.6) as i32,
+            w as i32,
+            h as i32,
+        );
         cv.round_rect(badge, 4, SHARE_GREEN);
         ui::text_in(cv, &f, fpx, badge, label, 0x04130C, 1, 0.0);
     }
@@ -1573,19 +1739,50 @@ impl Session {
         cv.fill(Rect::new(0, 0, w, bar_h), PRIVATE_RED);
         let bf = self.f.black.clone();
         let bpx = 14.max((bar_h as f32 * 0.48) as i32) as f32;
-        ui::text_in(cv, &bf, bpx, Rect::new(16, 0, w - 32, bar_h), "PRIVATE  ·  NOT FOR SHARING  ·  PRESENTER VIEW", 0xffffff, 1, 2.0);
+        ui::text_in(
+            cv,
+            &bf,
+            bpx,
+            Rect::new(16, 0, w - 32, bar_h),
+            "PRIVATE  ·  NOT FOR SHARING  ·  PRESENTER VIEW",
+            0xffffff,
+            1,
+            2.0,
+        );
         let px = c.font_px;
         let x0 = 16;
         let iw = w - 32;
         let mut y = bar_h + 10;
         // Mode and audience state.
-        let mode = if self.online { "PRESENTER · ONLINE" } else { "PRESENTER · DOCKED" };
+        let mode = if self.online {
+            "PRESENTER · ONLINE"
+        } else {
+            "PRESENTER · DOCKED"
+        };
         let mf = self.f.black.clone();
         let mw = ui::text_w(&mf, px, mode, 1.0).ceil() as i32;
-        ui::text_in(cv, &mf, px, Rect::new(x0, y, mw + 4, 24), mode, 0xe8e8e8, 0, 1.0);
+        ui::text_in(
+            cv,
+            &mf,
+            px,
+            Rect::new(x0, y, mw + 4, 24),
+            mode,
+            0xe8e8e8,
+            0,
+            1.0,
+        );
         let (state, warn) = self.audience_state();
         let sf = self.f.bold.clone();
-        ui::text_in(cv, &sf, px, Rect::new(x0 + mw + 28, y, iw - mw - 28, 24), &state, if warn { 0xffb020 } else { 0xd0d0d0 }, 0, 0.0);
+        ui::text_in(
+            cv,
+            &sf,
+            px,
+            Rect::new(x0 + mw + 28, y, iw - mw - 28, 24),
+            &state,
+            if warn { 0xffb020 } else { 0xd0d0d0 },
+            0,
+            0.0,
+        );
         y += 24 + 10;
         let bh = 36;
         let controls_y = h - 12 - bh;
@@ -1595,12 +1792,32 @@ impl Session {
         let bw = 170;
         let ew = 230;
         for (r, label, hit, kind) in [
-            (Rect::new(x0, controls_y, bw, bh), "‹  PREVIOUS", PHit::Prev, BtnKind::Normal),
-            (Rect::new(x0 + (iw - ew) / 2, controls_y, ew, bh), "✕  END PRESENTATION", PHit::End, BtnKind::Danger),
-            (Rect::new(x0 + iw - bw, controls_y, bw, bh), "NEXT  ›", PHit::Next, BtnKind::Normal),
+            (
+                Rect::new(x0, controls_y, bw, bh),
+                "‹  PREVIOUS",
+                PHit::Prev,
+                BtnKind::Normal,
+            ),
+            (
+                Rect::new(x0 + (iw - ew) / 2, controls_y, ew, bh),
+                "✕  END PRESENTATION",
+                PHit::End,
+                BtnKind::Danger,
+            ),
+            (
+                Rect::new(x0 + iw - bw, controls_y, bw, bh),
+                "NEXT  ›",
+                PHit::Next,
+                BtnKind::Normal,
+            ),
         ] {
             let hv = self.hover == Some(hit);
-            let mut p = Paint { cv, c: &c, f: &self.f, px };
+            let mut p = Paint {
+                cv,
+                c: &c,
+                f: &self.f,
+                px,
+            };
             p.button(r, label, kind, hv, false, true, false);
             self.hits.push((r, hit));
         }
@@ -1644,54 +1861,123 @@ impl Session {
         let top_h = bh - notes_h - gap;
         let label_h = 18;
         let min_right = 240.max((bw as f32 * 0.30) as i32);
-        let cw = (bw - min_right - gap).min(((top_h - label_h) as f32 * 16.0 / 9.0) as i32).max(160);
+        let cw = (bw - min_right - gap)
+            .min(((top_h - label_h) as f32 * 16.0 / 9.0) as i32)
+            .max(160);
         let ch = (cw as f32 * 9.0 / 16.0) as i32;
         let lf = self.f.mono_bold.clone();
-        ui::text_in(cv, &lf, 11.0, Rect::new(b.x, b.y, cw, label_h), "CURRENT", 0x7a7a7a, 0, 1.0);
+        ui::text_in(
+            cv,
+            &lf,
+            11.0,
+            Rect::new(b.x, b.y, cw, label_h),
+            "CURRENT",
+            0x7a7a7a,
+            0,
+            1.0,
+        );
         let cur = Rect::new(b.x, b.y + label_h, cw, ch);
         // CURRENT mirrors the audience: fades, transitions, focus, zoom.
         cv.fill(cur, 0x0B0B0B);
         let (aw, ah) = (self.asize.0.max(1) as f32, self.asize.1.max(1) as f32);
         let s = (cw as f32 / aw).min(ch as f32 / ah);
-        let dst = RectF::new(cur.x as f32 + (cw as f32 - aw * s) / 2.0, cur.y as f32 + (ch as f32 - ah * s) / 2.0, aw * s, ah * s);
+        let dst = RectF::new(
+            cur.x as f32 + (cw as f32 - aw * s) / 2.0,
+            cur.y as f32 + (ch as f32 - ah * s) / 2.0,
+            aw * s,
+            ah * s,
+        );
         self.draw_view(cv, dst, s, false);
         let vr = self.view_rect();
         self.preview_rect = RectF::new(dst.x + vr.x * s, dst.y + vr.y * s, vr.w * s, vr.h * s);
         self.hits.push((cur, PHit::Current));
         let rx = b.x + cw + gap;
         let rw = b.w - cw - gap;
-        let timer_px = 30.max(120.min((top_h as f32 * 0.17) as i32).min((rw as f32 * 0.16) as i32)) as f32;
+        let timer_px = 30.max(
+            120.min((top_h as f32 * 0.17) as i32)
+                .min((rw as f32 * 0.16) as i32),
+        ) as f32;
         let mono_b = self.f.mono_bold.clone();
         let mono = self.f.mono.clone();
         let mut y = b.y;
-        let secs = if self.share_checking { 0 } else { self.active_elapsed().as_secs() };
+        let secs = if self.share_checking {
+            0
+        } else {
+            self.active_elapsed().as_secs()
+        };
         let label = if secs < 3600 {
             format!("{:02}:{:02}", secs / 60, secs % 60)
         } else {
             format!("{}:{:02}:{:02}", secs / 3600, secs % 3600 / 60, secs % 60)
         };
-        ui::text_in(cv, &mono_b, timer_px, Rect::new(rx, y, rw, (timer_px * 1.25) as i32), &label, 0xf4f2ed, 0, 0.0);
+        ui::text_in(
+            cv,
+            &mono_b,
+            timer_px,
+            Rect::new(rx, y, rw, (timer_px * 1.25) as i32),
+            &label,
+            0xf4f2ed,
+            0,
+            0.0,
+        );
         y += (timer_px * 1.25) as i32;
         let target = i_get(&self.data, "targetMinutes", 0);
         if target > 0 {
-            let vis: Vec<usize> = (0..self.deck().slides().len()).filter(|&j| visible(&self.data, j)).collect();
-            let pos = vis.iter().position(|&j| j == self.i).map(|p| p + 1).unwrap_or(1);
+            let vis: Vec<usize> = (0..self.deck().slides().len())
+                .filter(|&j| visible(&self.data, j))
+                .collect();
+            let pos = vis
+                .iter()
+                .position(|&j| j == self.i)
+                .map(|p| p + 1)
+                .unwrap_or(1);
             let expected = (target * 60) as f64 * (pos as f64 / vis.len().max(1) as f64);
             let delta = secs as i64 - expected as i64;
             let sign = if delta >= 0 { "+" } else { "−" };
             let d = delta.unsigned_abs();
-            let pace = format!("PACE {sign}{:02}:{:02}  ·  TARGET {target} MIN", d / 60, d % 60);
+            let pace = format!(
+                "PACE {sign}{:02}:{:02}  ·  TARGET {target} MIN",
+                d / 60,
+                d % 60
+            );
             let pp = 13.max((timer_px * 0.24) as i32) as f32;
-            ui::text_in(cv, &mono, pp, Rect::new(rx, y, rw, (pp * 1.5) as i32), &pace, 0xa8a8a8, 0, 0.0);
+            ui::text_in(
+                cv,
+                &mono,
+                pp,
+                Rect::new(rx, y, rw, (pp * 1.5) as i32),
+                &pace,
+                0xa8a8a8,
+                0,
+                0.0,
+            );
             y += (pp * 1.5) as i32;
         }
         let cp = 16.max((timer_px * 0.42) as i32) as f32;
         let row_h = (cp * 1.5) as i32;
         let clock = crate::editor::clock_now();
-        ui::text_in(cv, &self.f.mono_bold.clone(), cp, Rect::new(rx, y, rw / 2, row_h), &clock, 0xa8a8a8, 0, 0.0);
+        ui::text_in(
+            cv,
+            &self.f.mono_bold.clone(),
+            cp,
+            Rect::new(rx, y, rw / 2, row_h),
+            &clock,
+            0xa8a8a8,
+            0,
+            0.0,
+        );
         let total = self.deck().slides().len();
         let pp = 16.max((timer_px * 0.40) as i32) as f32;
-        ui::text_in(cv, &mono_b, pp, Rect::new(rx + rw / 2, y, rw - rw / 2, row_h), &format!("{} / {total}", self.i + 1), 0xe8e8e8, 2, 0.0);
+        ui::text_in(
+            cv,
+            &mono_b,
+            pp,
+            Rect::new(rx + rw / 2, y, rw - rw / 2, row_h),
+            &format!("{} / {total}", self.i + 1),
+            0xe8e8e8,
+            2,
+            0.0,
+        );
         y += row_h + gap;
         let avail = top_h - (y - b.y) - label_h;
         let nw = rw.min((avail as f32 * 16.0 / 9.0) as i32);
@@ -1699,7 +1985,16 @@ impl Session {
         let ni = next_visible(&self.data, self.i, 1);
         let at_end = ni == self.i;
         let compact = nw < 200 || nh < 100 || at_end;
-        ui::text_in(cv, &lf, 11.0, Rect::new(rx, y, rw, label_h), "NEXT", 0x7a7a7a, 0, 1.0);
+        ui::text_in(
+            cv,
+            &lf,
+            11.0,
+            Rect::new(rx, y, rw, label_h),
+            "NEXT",
+            0x7a7a7a,
+            0,
+            1.0,
+        );
         if compact {
             let t = if at_end {
                 if self.cinematic_close() {
@@ -1710,14 +2005,34 @@ impl Session {
             } else {
                 let ns = self.slide(ni);
                 let tt = s_get(&ns, "title", "");
-                format!("{}  ·  {}", ni + 1, if tt.is_empty() { s_get(&ns, "layout", "") } else { tt })
+                format!(
+                    "{}  ·  {}",
+                    ni + 1,
+                    if tt.is_empty() {
+                        s_get(&ns, "layout", "")
+                    } else {
+                        tt
+                    }
+                )
             };
             let tp = 14.max((timer_px * 0.30) as i32) as f32;
             let bf = self.f.bold.clone();
             let lines = ui::wrap(&bf, tp, &t, rw as f32);
             let lh = ui::line_h(&bf, tp).ceil();
-            for (k, l) in lines.iter().take(((avail.max(30)) as f32 / lh) as usize).enumerate() {
-                ui::text(cv, &bf, tp, rx as f32, (y + label_h) as f32 + k as f32 * lh, l, 0xd8d8d8);
+            for (k, l) in lines
+                .iter()
+                .take(((avail.max(30)) as f32 / lh) as usize)
+                .enumerate()
+            {
+                ui::text(
+                    cv,
+                    &bf,
+                    tp,
+                    rx as f32,
+                    (y + label_h) as f32 + k as f32 * lh,
+                    l,
+                    0xd8d8d8,
+                );
             }
         } else {
             let nr = Rect::new(rx, y + label_h, nw, nh);
@@ -1737,14 +2052,36 @@ impl Session {
         // Notes.
         let ny = b.y + top_h + gap;
         let bh2 = 30;
-        ui::text_in(cv, &lf, 11.0, Rect::new(b.x, ny, b.w - 120, bh2), "SPEAKER NOTES", 0x7a7a7a, 0, 1.0);
+        ui::text_in(
+            cv,
+            &lf,
+            11.0,
+            Rect::new(b.x, ny, b.w - 120, bh2),
+            "SPEAKER NOTES",
+            0x7a7a7a,
+            0,
+            1.0,
+        );
         let c = self.c.clone();
         for (r, label, hit) in [
-            (Rect::new(b.x + b.w - 104, ny, 48, bh2 - 2), "A−", PHit::Smaller),
-            (Rect::new(b.x + b.w - 52, ny, 52, bh2 - 2), "A+", PHit::Larger),
+            (
+                Rect::new(b.x + b.w - 104, ny, 48, bh2 - 2),
+                "A−",
+                PHit::Smaller,
+            ),
+            (
+                Rect::new(b.x + b.w - 52, ny, 52, bh2 - 2),
+                "A+",
+                PHit::Larger,
+            ),
         ] {
             let hv = self.hover == Some(hit);
-            let mut p = Paint { cv, c: &c, f: &self.f, px: c.font_px };
+            let mut p = Paint {
+                cv,
+                c: &c,
+                f: &self.f,
+                px: c.font_px,
+            };
             p.button(r, label, BtnKind::Normal, hv, false, true, false);
             self.hits.push((r, hit));
         }
@@ -1757,7 +2094,15 @@ impl Session {
         let inner = nr.inset(10);
         cv.push_clip_rect(inner);
         if notes.is_empty() {
-            ui::text(cv, &nf, npx, inner.x as f32, inner.y as f32, "No speaker notes for this slide.", 0x5a5a5a);
+            ui::text(
+                cv,
+                &nf,
+                npx,
+                inner.x as f32,
+                inner.y as f32,
+                "No speaker notes for this slide.",
+                0x5a5a5a,
+            );
         } else {
             let lines = ui::wrap(&nf, npx, &notes, inner.w as f32);
             let lh = nf.line_spacing(npx).ceil();
@@ -1809,11 +2154,28 @@ impl Session {
         }
         let x0 = r.x + 18;
         let mut y = r.y + 18;
-        ui::text_spaced(cv, &bold, 20.0, x0 as f32, y as f32, "SHARE CHECK", 0xffffff, 1.0);
+        ui::text_spaced(
+            cv,
+            &bold,
+            20.0,
+            x0 as f32,
+            y as f32,
+            "SHARE CHECK",
+            0xffffff,
+            1.0,
+        );
         y += 34;
         let steps: [&[(&str, bool)]; 3] = [
-            &[("1.  In Teams, click ", false), ("Share", true), (".", false)],
-            &[("2.  Open the ", false), ("Window", true), (" tab (not Entire screen).", false)],
+            &[
+                ("1.  In Teams, click ", false),
+                ("Share", true),
+                (".", false),
+            ],
+            &[
+                ("2.  Open the ", false),
+                ("Window", true),
+                (" tab (not Entire screen).", false),
+            ],
             &[("3.  Pick this entry:", false)],
         ];
         for st in steps {
@@ -1827,10 +2189,23 @@ impl Session {
         y += 10;
         let pick = Rect::new(x0, y, inner, 40);
         cv.fill(pick, SHARE_GREEN);
-        ui::text_in(cv, &bold, 17.0, Rect::new(pick.x + 12, pick.y, pick.w - 24, pick.h), AUDIENCE_TITLE, 0x04130C, 0, 0.0);
+        ui::text_in(
+            cv,
+            &bold,
+            17.0,
+            Rect::new(pick.x + 12, pick.y, pick.w - 24, pick.h),
+            AUDIENCE_TITLE,
+            0x04130C,
+            0,
+            0.0,
+        );
         y += 44 + 10;
         for (lines, col) in &blocks {
-            let f = if *col == 0xff8a80 || *col == 0xffb020 { self.f.bold.clone() } else { sans.clone() };
+            let f = if *col == 0xff8a80 || *col == 0xffb020 {
+                self.f.bold.clone()
+            } else {
+                sans.clone()
+            };
             for l in lines {
                 ui::text(cv, &f, px, x0 as f32, y as f32, l, *col);
                 y += lh;
@@ -1848,7 +2223,12 @@ impl Session {
             (st, "Start presenting", PHit::Start, BtnKind::Primary),
         ] {
             let hv = self.hover == Some(hit);
-            let mut p = Paint { cv, c: &c, f: &self.f, px };
+            let mut p = Paint {
+                cv,
+                c: &c,
+                f: &self.f,
+                px,
+            };
             p.button(rr, label, kind, hv, false, true, false);
             self.hits.push((rr, hit));
         }

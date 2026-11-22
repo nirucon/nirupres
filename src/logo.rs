@@ -51,19 +51,20 @@ pub fn icon() -> Vec<(u32, u32, Vec<u32>)> {
                         for sx in 0..n {
                             let ux = (x as f32 + (sx as f32 + 0.5) / n as f32) * k;
                             let uy = (y as f32 + (sy as f32 + 0.5) / n as f32) * k;
-                            let col: Option<u32> = if !in_round_rect(ux, uy, 5.0, 7.0, 59.0, 57.0, 8.0) {
-                                None
-                            } else if !in_round_rect(ux, uy, 7.0, 9.0, 57.0, 55.0, 6.0) {
-                                Some(0x6f6f6f)
-                            } else if inside_poly(ux, uy, &N) {
-                                Some(0xf2f2f2)
-                            } else if (13.0..51.0).contains(&ux) && (15.0..17.0).contains(&uy) {
-                                Some(0xe8e8e8)
-                            } else if (17.0..31.0).contains(&ux) && (49.0..51.0).contains(&uy) {
-                                Some(0x8f8f8f)
-                            } else {
-                                Some(0x111111)
-                            };
+                            let col: Option<u32> =
+                                if !in_round_rect(ux, uy, 5.0, 7.0, 59.0, 57.0, 8.0) {
+                                    None
+                                } else if !in_round_rect(ux, uy, 7.0, 9.0, 57.0, 55.0, 6.0) {
+                                    Some(0x6f6f6f)
+                                } else if inside_poly(ux, uy, &N) {
+                                    Some(0xf2f2f2)
+                                } else if (13.0..51.0).contains(&ux) && (15.0..17.0).contains(&uy) {
+                                    Some(0xe8e8e8)
+                                } else if (17.0..31.0).contains(&ux) && (49.0..51.0).contains(&uy) {
+                                    Some(0x8f8f8f)
+                                } else {
+                                    Some(0x111111)
+                                };
                             if let Some(c) = col {
                                 acc[0] += ((c >> 16) & 0xff) as f32;
                                 acc[1] += ((c >> 8) & 0xff) as f32;

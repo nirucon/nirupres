@@ -1,4 +1,16 @@
 #![recursion_limit = "256"]
+// Kept for parity and tests; small helpers some builds do not call.
+#![allow(dead_code)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::write_with_newline,
+    clippy::redundant_guards,
+    clippy::wrong_self_convention,
+    clippy::needless_range_loop,
+    clippy::collapsible_match,
+    clippy::manual_find
+)]
 //! NIRUPRES: minimal, keyboard-oriented presentation studio for X11.
 mod app;
 mod canvas;
@@ -141,7 +153,8 @@ fn main() {
             } else {
                 let dir = PathBuf::from(out);
                 let _ = std::fs::create_dir_all(&dir);
-                export::export_all_png(&data, &dir).map(|n| format!("{n} PNG slides in {}", dir.display()))
+                export::export_all_png(&data, &dir)
+                    .map(|n| format!("{n} PNG slides in {}", dir.display()))
             };
             match r {
                 Ok(m) => println!("exported: {m}"),
@@ -173,7 +186,11 @@ fn main() {
             for f in &fails {
                 println!("{f}");
             }
-            println!("template fit: {} failure(s), {} long-text note(s)", fails.len(), notes.len());
+            println!(
+                "template fit: {} failure(s), {} long-text note(s)",
+                fails.len(),
+                notes.len()
+            );
             std::process::exit(i32::from(!fails.is_empty()));
         }
         Some("--present") => {
@@ -207,7 +224,10 @@ fn main() {
         }
         Some(f) => {
             // A deck from the file manager (Exec=nirupres %f), or a file:// URI.
-            let f = f.strip_prefix("file://").map(x::decode_path).unwrap_or_else(|| f.to_string());
+            let f = f
+                .strip_prefix("file://")
+                .map(x::decode_path)
+                .unwrap_or_else(|| f.to_string());
             gui(app::Start::Editor(Some(prefs::expand(&f))), started);
         }
         None => gui(app::Start::Editor(None), started),
@@ -230,6 +250,9 @@ pub fn trace(what: &str) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let start = START.get_or_init(std::time::Instant::now);
     if *ON.get_or_init(|| std::env::var("NIRUPRES_TIMING").is_ok_and(|v| v == "2")) {
-        eprintln!("  {:8.2} ms  {what}", start.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "  {:8.2} ms  {what}",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
     }
 }

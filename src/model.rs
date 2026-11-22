@@ -54,26 +54,130 @@ const fn th(
 }
 
 pub const THEMES: [Theme; 17] = [
-    th("B&W", 0x050505, 0xF4F2ED, 0x969696, 0xF4F2ED, 0x2A2A2A, true, false),
-    th("W&B", 0xF4F2ED, 0x090909, 0x66635F, 0x090909, 0xD4D0C8, true, false),
-    th("GRAY", 0x242424, 0xECECEC, 0xA8A8A8, 0xCFCFCF, 0x505050, true, false),
-    th("REDWINE", 0x210B11, 0xF1E8E3, 0xB89DA4, 0x8F263B, 0x54202C, false, false),
-    th("SATIE", 0xEDE7D8, 0x191815, 0x6F695F, 0x2E2923, 0xC7BEAC, true, false),
+    th(
+        "B&W", 0x050505, 0xF4F2ED, 0x969696, 0xF4F2ED, 0x2A2A2A, true, false,
+    ),
+    th(
+        "W&B", 0xF4F2ED, 0x090909, 0x66635F, 0x090909, 0xD4D0C8, true, false,
+    ),
+    th(
+        "GRAY", 0x242424, 0xECECEC, 0xA8A8A8, 0xCFCFCF, 0x505050, true, false,
+    ),
+    th(
+        "REDWINE", 0x210B11, 0xF1E8E3, 0xB89DA4, 0x8F263B, 0x54202C, false, false,
+    ),
+    th(
+        "SATIE", 0xEDE7D8, 0x191815, 0x6F695F, 0x2E2923, 0xC7BEAC, true, false,
+    ),
     Theme {
         palette: Some([0xA33E32, 0x557A68, 0x66859A, 0xC39A45]),
-        ..th("CARL LARSSON", 0xEFE1BF, 0x26372F, 0x78664F, 0xA33E32, 0xB8A47B, false, false)
+        ..th(
+            "CARL LARSSON",
+            0xEFE1BF,
+            0x26372F,
+            0x78664F,
+            0xA33E32,
+            0xB8A47B,
+            false,
+            false,
+        )
     },
-    th("BEKSINSKI", 0x0A0807, 0xE9E0D2, 0x8F8274, 0x7B3028, 0x30251F, false, false),
-    th("MARTIN", 0x0A0D0E, 0xEEE8D9, 0x92938D, 0xB78C4A, 0x293034, false, false),
-    th("SFUMATO", 0x171713, 0xE8E3D5, 0x9C988C, 0x8A8067, 0x37362F, false, false),
-    th("UDDEVALLA DARK", 0x07141D, 0xECEDED, 0xA9BAC4, 0x0065A6, 0x24404F, false, true),
-    th("UDDEVALLA BLACK", 0x000000, 0xFFFFFF, 0xB8C0C5, 0x0065A6, 0x252525, false, true),
-    th("UDDEVALLA BLUE", 0xF8FAFB, 0x173042, 0x526774, 0x0065A6, 0xD8E2E8, false, true),
-    th("UDDEVALLA GREEN", 0xF8FAFB, 0x173042, 0x526774, 0x79AC54, 0xDCE7D5, false, true),
-    th("UDDEVALLA YELLOW", 0xF8FAFB, 0x173042, 0x526774, 0xFFCC00, 0xEEE5BF, false, true),
-    th("UDDEVALLA RED", 0xF8FAFB, 0x173042, 0x526774, 0xB51726, 0xE8D5D8, false, true),
-    th("UDDEVALLA PINK", 0xF8FAFB, 0x173042, 0x526774, 0xE0437C, 0xEED8E1, false, true),
-    th("UDDEVALLA PURPLE", 0xF8FAFB, 0x173042, 0x526774, 0x672A61, 0xE0D5DF, false, true),
+    th(
+        "BEKSINSKI",
+        0x0A0807,
+        0xE9E0D2,
+        0x8F8274,
+        0x7B3028,
+        0x30251F,
+        false,
+        false,
+    ),
+    th(
+        "MARTIN", 0x0A0D0E, 0xEEE8D9, 0x92938D, 0xB78C4A, 0x293034, false, false,
+    ),
+    th(
+        "SFUMATO", 0x171713, 0xE8E3D5, 0x9C988C, 0x8A8067, 0x37362F, false, false,
+    ),
+    th(
+        "UDDEVALLA DARK",
+        0x07141D,
+        0xECEDED,
+        0xA9BAC4,
+        0x0065A6,
+        0x24404F,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA BLACK",
+        0x000000,
+        0xFFFFFF,
+        0xB8C0C5,
+        0x0065A6,
+        0x252525,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA BLUE",
+        0xF8FAFB,
+        0x173042,
+        0x526774,
+        0x0065A6,
+        0xD8E2E8,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA GREEN",
+        0xF8FAFB,
+        0x173042,
+        0x526774,
+        0x79AC54,
+        0xDCE7D5,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA YELLOW",
+        0xF8FAFB,
+        0x173042,
+        0x526774,
+        0xFFCC00,
+        0xEEE5BF,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA RED",
+        0xF8FAFB,
+        0x173042,
+        0x526774,
+        0xB51726,
+        0xE8D5D8,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA PINK",
+        0xF8FAFB,
+        0x173042,
+        0x526774,
+        0xE0437C,
+        0xEED8E1,
+        false,
+        true,
+    ),
+    th(
+        "UDDEVALLA PURPLE",
+        0xF8FAFB,
+        0x173042,
+        0x526774,
+        0x672A61,
+        0xE0D5DF,
+        false,
+        true,
+    ),
 ];
 
 pub fn theme(name: &str) -> Option<&'static Theme> {
@@ -626,7 +730,10 @@ impl Deck<'_> {
         b_get(self.0, "showNumbers")
     }
     pub fn show_logo(&self) -> bool {
-        self.0.get("showLogo").map(|v| truthy(Some(v))).unwrap_or(true)
+        self.0
+            .get("showLogo")
+            .map(|v| truthy(Some(v)))
+            .unwrap_or(true)
     }
     pub fn footer(&self) -> String {
         s_get(self.0, "footerText", "")
@@ -904,7 +1011,10 @@ mod tests {
         assert_eq!((l.as_str(), r.as_str(), e), ("a\nb", "c", true));
         let (l, r, e) = parse_two_column_body("a\n\n\nb\nc");
         assert_eq!((l.as_str(), r.as_str(), e), ("a", "b\nc", false));
-        assert_eq!(parse_columns("a\n|||\nb\n||\nc\n|||\nd", 3), vec!["a", "b", "c\n\nd"]);
+        assert_eq!(
+            parse_columns("a\n|||\nb\n||\nc\n|||\nd", 3),
+            vec!["a", "b", "c\n\nd"]
+        );
         assert_eq!(parse_columns("a\n\nb", 3), vec!["a", "b", ""]);
     }
 
@@ -912,7 +1022,10 @@ mod tests {
     fn tables_and_items() {
         let rows = table_rows("| A | B |\n|---|---|\n| 1 | 2 |");
         assert_eq!(rows, vec![vec!["A", "B"], vec!["1", "2"]]);
-        assert_eq!(clean_items("- one\n•  two\n*three", true), vec!["one", "two", "*three"]);
+        assert_eq!(
+            clean_items("- one\n•  two\n*three", true),
+            vec!["one", "two", "*three"]
+        );
         let (shown, hidden) = take_items((0..9).map(|i| i.to_string()).collect(), 7);
         assert_eq!((shown.len(), hidden), (6, 3));
     }

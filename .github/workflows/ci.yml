@@ -9,30 +9,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  gate:
-    name: Release gate (Python ${{ matrix.python }})
+  check:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: ${{ matrix.python }}
-      - name: Installer and uninstaller
-        run: sh -n install.sh && sh -n uninstall.sh && sh tests/uninstall_test.sh
-      - name: Version identity
+          components: rustfmt, clippy
+      - name: Install X11 test tools and fonts
         run: |
-          version=$(sed -n 's/^VERSION="\(.*\)"/\1/p' install.sh | head -1)
-          test -n "$version"
-          test "$(sed -n 's/^__version__ = "\(.*\)"/\1/p' nirupres/__init__.py)" = "$version"
-          test "$(grep -o "VERSION = \"[0-9.]*\"" nirupres/foundation.py | head -1 | cut -d'"' -f2)" = "$version"
-          test "$(sed -n 's/^EXPECTED_VERSION = "\(.*\)"/\1/p' tests/release_gate.py)" = "$version"
-      - name: Shell syntax
-        run: for f in install.sh run.sh scripts/test.sh; do sh -n "$f"; done
-      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 fonts-noto-core fonts-noto-mono
-      - run: pip install -r requirements.txt
-      - run: python3 -m compileall -q nirupres tests
-      - run: QT_QPA_PLATFORM=offscreen PYTHONPATH=. python3 tests/release_gate.py
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool x11-utils fonts-noto-core fonts-noto-mono fonts-dejavu-core python3
+      - run: sh -n install.sh && sh -n uninstall.sh && sh tests/uninstall_test.sh
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - run: ./target/release/nirupres --self-test-fit
+      - run: sh tests/xvfb.sh target/release/nirupres

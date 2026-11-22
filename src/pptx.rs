@@ -48,7 +48,10 @@ fn notes_body(text: &str) -> String {
             if l.is_empty() {
                 r#"<a:p><a:endParaRPr lang="en-US"/></a:p>"#.to_string()
             } else {
-                format!(r#"<a:p><a:r><a:rPr lang="en-US" dirty="0"/><a:t>{}</a:t></a:r></a:p>"#, xml_escape(l))
+                format!(
+                    r#"<a:p><a:r><a:rPr lang="en-US" dirty="0"/><a:t>{}</a:t></a:r></a:p>"#,
+                    xml_escape(l)
+                )
             }
         })
         .collect();
@@ -93,8 +96,15 @@ pub fn write(path: &Path, slides: &[(Vec<u8>, String)], aspect: f64) -> Result<(
     let mut ids = String::new();
     let mut rels = String::new();
     for i in 1..=n {
-        ids.push_str(&format!(r#"<p:sldId id="{}" r:id="rId{}"/>"#, 255 + i, i + 1));
-        rels.push_str(&format!(r#"<Relationship Id="rId{}" Type="{REL}/slide" Target="slides/slide{i}.xml"/>"#, i + 1));
+        ids.push_str(&format!(
+            r#"<p:sldId id="{}" r:id="rId{}"/>"#,
+            255 + i,
+            i + 1
+        ));
+        rels.push_str(&format!(
+            r#"<Relationship Id="rId{}" Type="{REL}/slide" Target="slides/slide{i}.xml"/>"#,
+            i + 1
+        ));
     }
     let base = n + 2;
     rels.push_str(&format!(r#"<Relationship Id="rId1" Type="{REL}/slideMaster" Target="slideMasters/slideMaster1.xml"/><Relationship Id="rId{}" Type="{REL}/notesMaster" Target="notesMasters/notesMaster1.xml"/><Relationship Id="rId{}" Type="{REL}/theme" Target="theme/theme1.xml"/><Relationship Id="rId{}" Type="{REL}/presProps" Target="presProps.xml"/><Relationship Id="rId{}" Type="{REL}/viewProps" Target="viewProps.xml"/><Relationship Id="rId{}" Type="{REL}/tableStyles" Target="tableStyles.xml"/>"#, base, base + 1, base + 2, base + 3, base + 4));
@@ -109,8 +119,14 @@ pub fn write(path: &Path, slides: &[(Vec<u8>, String)], aspect: f64) -> Result<(
         format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{rels}</Relationships>"#).as_bytes(),
     )?;
-    z.add_deflated("ppt/presProps.xml", format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentationPr {NS}/>"#).as_bytes())?;
+    z.add_deflated(
+        "ppt/presProps.xml",
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentationPr {NS}/>"#
+        )
+        .as_bytes(),
+    )?;
     z.add_deflated("ppt/viewProps.xml", format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:viewPr {NS}><p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/></p:normalViewPr><p:gridSpacing cx="76200" cy="76200"/></p:viewPr>"#).as_bytes())?;
     z.add_deflated("ppt/tableStyles.xml", br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -156,12 +172,18 @@ pub fn write(path: &Path, slides: &[(Vec<u8>, String)], aspect: f64) -> Result<(
         );
         z.add_deflated(
             &format!("ppt/slides/slide{k}.xml"),
-            format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld {NS}><p:cSld>{}</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"#, sp_tree(&pic)).as_bytes(),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld {NS}><p:cSld>{}</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"#,
+                sp_tree(&pic)
+            )
+            .as_bytes(),
         )?;
         let has = !notes.trim().is_empty();
         let notes_rel = if has {
-            format!(r#"<Relationship Id="rId3" Type="{REL}/notesSlide" Target="../notesSlides/notesSlide{k}.xml"/>"#)
+            format!(
+                r#"<Relationship Id="rId3" Type="{REL}/notesSlide" Target="../notesSlides/notesSlide{k}.xml"/>"#
+            )
         } else {
             String::new()
         };
@@ -177,8 +199,12 @@ pub fn write(path: &Path, slides: &[(Vec<u8>, String)], aspect: f64) -> Result<(
             );
             z.add_deflated(
                 &format!("ppt/notesSlides/notesSlide{k}.xml"),
-                format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:notes {NS}><p:cSld>{}</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>"#, sp_tree(&body)).as_bytes(),
+                format!(
+                    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:notes {NS}><p:cSld>{}</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>"#,
+                    sp_tree(&body)
+                )
+                .as_bytes(),
             )?;
             z.add_deflated(
                 &format!("ppt/notesSlides/_rels/notesSlide{k}.xml.rels"),

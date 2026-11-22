@@ -18,12 +18,27 @@ pub fn available() -> bool {
 }
 
 impl Video {
-    pub fn start(x: &crate::x::X, parent: u32, rect: (i32, i32, i32, i32), source: &str, autoplay: bool, muted: bool, key: String) -> Option<Self> {
+    pub fn start(
+        x: &crate::x::X,
+        parent: u32,
+        rect: (i32, i32, i32, i32),
+        source: &str,
+        autoplay: bool,
+        muted: bool,
+        key: String,
+    ) -> Option<Self> {
         let mpv = crate::presenting::command_path("mpv")?;
         let win = x
-            .create_child(parent, rect.0, rect.1, rect.2.max(1) as u16, rect.3.max(1) as u16)
+            .create_child(
+                parent,
+                rect.0,
+                rect.1,
+                rect.2.max(1) as u16,
+                rect.3.max(1) as u16,
+            )
             .ok()?;
-        let sock = std::env::temp_dir().join(format!("nirupres-mpv-{}-{win}.sock", std::process::id()));
+        let sock =
+            std::env::temp_dir().join(format!("nirupres-mpv-{}-{win}.sock", std::process::id()));
         let _ = std::fs::remove_file(&sock);
         let mut cmd = std::process::Command::new(mpv);
         cmd.arg(format!("--wid={win}"))

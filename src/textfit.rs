@@ -58,10 +58,24 @@ thread_local! {
     static FIT_CACHE: RefCell<HashMap<FitKey, Option<i32>>> = RefCell::new(HashMap::new());
 }
 
-type FitKey = (String, Vec<(usize, usize, bool, bool)>, String, u16, i32, i32, i64, i64, usize, bool);
+type FitKey = (
+    String,
+    Vec<(usize, usize, bool, bool)>,
+    String,
+    u16,
+    i32,
+    i32,
+    i64,
+    i64,
+    usize,
+    bool,
+);
 
 /// Collect issues (and optionally painted line boxes) while `f` runs.
-pub fn collect<T>(trace: bool, f: impl FnOnce() -> T) -> (T, Vec<Issue>, Vec<(RectF, RectF, String)>) {
+pub fn collect<T>(
+    trace: bool,
+    f: impl FnOnce() -> T,
+) -> (T, Vec<Issue>, Vec<(RectF, RectF, String)>) {
     let old_r = REPORT.with(|r| r.borrow_mut().replace(Vec::new()));
     let old_t = TRACE.with(|t| {
         let mut t = t.borrow_mut();
@@ -72,8 +86,12 @@ pub fn collect<T>(trace: bool, f: impl FnOnce() -> T) -> (T, Vec<Issue>, Vec<(Re
         old
     });
     let v = f();
-    let rep = REPORT.with(|r| std::mem::replace(&mut *r.borrow_mut(), old_r)).unwrap_or_default();
-    let tr = TRACE.with(|t| std::mem::replace(&mut *t.borrow_mut(), old_t)).unwrap_or_default();
+    let rep = REPORT
+        .with(|r| std::mem::replace(&mut *r.borrow_mut(), old_r))
+        .unwrap_or_default();
+    let tr = TRACE
+        .with(|t| std::mem::replace(&mut *t.borrow_mut(), old_t))
+        .unwrap_or_default();
     (v, rep, tr)
 }
 
@@ -383,9 +401,7 @@ fn wrap_ranges(para: &[char], cw: &[f32], breaks: &[bool], width: f32) -> Vec<(u
 }
 
 fn fits(l: &Laid, rect: &RectF, max_lines: Option<usize>) -> bool {
-    l.width_ok
-        && l.height <= rect.h + 0.5
-        && max_lines.is_none_or(|m| m == 0 || l.lines.len() <= m)
+    l.width_ok && l.height <= rect.h + 0.5 && max_lines.is_none_or(|m| m == 0 || l.lines.len() <= m)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -419,8 +435,17 @@ pub fn fit_size(
         return v;
     }
     let ok = |px: i32| {
-        layout(&plain, &fmts, family, weight, px as f32, rect.w, wrap, HAlign::Left)
-            .is_some_and(|l| fits(&l, rect, max_lines))
+        layout(
+            &plain,
+            &fmts,
+            family,
+            weight,
+            px as f32,
+            rect.w,
+            wrap,
+            HAlign::Left,
+        )
+        .is_some_and(|l| fits(&l, rect, max_lines))
     };
     let result = if plain.trim().is_empty() || ok(max_px) {
         Some(max_px)
@@ -472,21 +497,41 @@ pub fn fit_draw(
         return px.unwrap_or(max_px as i32);
     }
     let (mut size, mut clipped) = match px {
-        None => match fit_size(text, family, weight, max_px, min_px, &rect, max_lines, markup_on, wrap) {
+        None => match fit_size(
+            text, family, weight, max_px, min_px, &rect, max_lines, markup_on, wrap,
+        ) {
             Some(s) => (s, false),
             None => (((min_px.min(max_px)) as i32).max(1), true),
         },
         Some(s) => (s.max(1), false),
     };
     let mut wrap = wrap;
-    let Some(mut laid) = layout(&plain, &fmts, family, weight, size as f32, rect.w, wrap, align.h) else {
+    let Some(mut laid) = layout(
+        &plain,
+        &fmts,
+        family,
+        weight,
+        size as f32,
+        rect.w,
+        wrap,
+        align.h,
+    ) else {
         return size;
     };
     if !wrap && !laid.width_ok {
         // Code still too wide at the minimum wraps rather than overflowing.
         wrap = true;
         clipped = false;
-        if let Some(l) = layout(&plain, &fmts, family, weight, size as f32, rect.w, true, align.h) {
+        if let Some(l) = layout(
+            &plain,
+            &fmts,
+            family,
+            weight,
+            size as f32,
+            rect.w,
+            true,
+            align.h,
+        ) {
             laid = l;
         }
     }
@@ -497,7 +542,16 @@ pub fn fit_draw(
     if step > rect.h {
         // Even one line is taller than the box: shrink below the minimum.
         size = ((size as f32 * rect.h / step) as i32).max(1);
-        if let Some(l) = layout(&plain, &fmts, family, weight, size as f32, rect.w, wrap, align.h) {
+        if let Some(l) = layout(
+            &plain,
+            &fmts,
+            family,
+            weight,
+            size as f32,
+            rect.w,
+            wrap,
+            align.h,
+        ) {
             laid = l;
         }
         step = laid.step;
@@ -539,7 +593,10 @@ pub fn fit_draw(
         let line = &laid.lines[n];
         let ly = y0 + line.y;
         if truncated && n == shown - 1 {
-            let rest: String = chars[line.start..].iter().map(|&c| if c == '\n' { ' ' } else { c }).collect();
+            let rest: String = chars[line.start..]
+                .iter()
+                .map(|&c| if c == '\n' { ' ' } else { c })
+                .collect();
             let elided = elide(&laid.base, laid.px, &rest, rect.w - 1.0);
             let wid = text_width(&laid.base, laid.px, &elided);
             let hx = match align.h {
@@ -569,7 +626,15 @@ pub fn fit_draw(
     size
 }
 
-fn emit_line(p: &mut dyn Painter, line: &Line, chars: &[char], x0: f32, base_y: f32, px: f32, color: Rgba) {
+fn emit_line(
+    p: &mut dyn Painter,
+    line: &Line,
+    chars: &[char],
+    x0: f32,
+    base_y: f32,
+    px: f32,
+    color: Rgba,
+) {
     let mut i = 0;
     while i < line.glyphs.len() {
         let fid = line.glyphs[i].0.face.id;
@@ -633,7 +698,8 @@ pub fn draw_plain(
         let mut last_cluster = usize::MAX;
         while i < gl.len() && gl[i].face.id == fid {
             let g = &gl[i];
-            run.glyphs.push((g.gid, pen + g.x_offset, base_y - g.y_offset));
+            run.glyphs
+                .push((g.gid, pen + g.x_offset, base_y - g.y_offset));
             if g.cluster != last_cluster {
                 if let Some(c) = chars.get(g.cluster) {
                     run.text.push(*c);
