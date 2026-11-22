@@ -18,7 +18,7 @@ export DISPLAY=$D
 sleep 1
 fail() {
   echo "FAIL: $*" >&2
-  [ -f "$SB/err" ] && tail -20 "$SB/err" >&2
+  [ -f "$SB/err" ] && tail -40 "$SB/err" >&2
   for w in $(xdotool search --name . 2>/dev/null); do
     printf 'window %s: %s\n' "$w" "$(xprop -id "$w" WM_CLASS WM_NAME 2>/dev/null | tr '\n' ' ')" >&2
   done
@@ -53,7 +53,7 @@ PY
 head -c 5 "$SB/cli.pdf" | grep -q '%PDF-' || fail "cli pdf"
 
 # The editor: first frame and memory.
-NIRUPRES_TIMING=1 NIRUPRES_MONITORS="LEFT:1920x1080+0+0,RIGHT:1920x1080+1920+0" \
+NIRUPRES_KEYLOG=1 NIRUPRES_TIMING=1 NIRUPRES_MONITORS="LEFT:1920x1080+0+0,RIGHT:1920x1080+1920+0" \
     "$BIN" "$SB/deck.nirupres" 2>"$SB/err" &
 A=$!
 PIDS="$PIDS $A"

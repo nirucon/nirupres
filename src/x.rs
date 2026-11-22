@@ -919,6 +919,14 @@ impl X {
             )),
             Event::KeyPress(e) => {
                 let sym = self.keysym(e.detail, e.state);
+                if std::env::var_os("NIRUPRES_KEYLOG").is_some() {
+                    eprintln!(
+                        "nirupres: key {} state {:#x} sym {sym:#x} win {}",
+                        e.detail,
+                        u16::from(e.state),
+                        e.event
+                    );
+                }
                 let st = u16::from(e.state);
                 let ctrl = st & u16::from(KeyButMask::CONTROL) != 0;
                 let mut ch = crate::keys::keysym_char(sym).filter(|_| !ctrl);
