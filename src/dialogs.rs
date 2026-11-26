@@ -72,6 +72,7 @@ pub enum Kind {
     Overview,
     DisplaySetup(Vec<x::Monitor>),
     OneScreen { ask: bool, from_start: bool },
+    Talk,
     Recovery { info: String, when: String },
     File(FileState),
 }
@@ -382,6 +383,27 @@ fn build(e: &mut Editor, kind: Kind) -> Dialog {
                 560,
             );
             d.checks.insert(0, false);
+            d
+        }
+        Kind::Talk => {
+            let mut d = Dialog::new(Kind::Talk, "Record a talk", 600);
+            let p = prefs::display_prefs();
+            let saved = p
+                .get("talkSource")
+                .and_then(|v| v.as_str())
+                .and_then(|n| TALK_PROFILES.iter().position(|(_, k)| *k == n));
+            let default = saved.unwrap_or(if crate::talk::camera_present() { 0 } else { 1 });
+            d.combos.insert(
+                0,
+                (
+                    TALK_PROFILES.iter().map(|(l, _)| l.to_string()).collect(),
+                    default,
+                ),
+            );
+            d.checks.insert(
+                0,
+                p.get("talkVideoSound").and_then(|v| v.as_str()) == Some("1"),
+            );
             d
         }
         Kind::Recovery { info, when } => {
@@ -1069,8 +1091,9 @@ pub fn palette_commands() -> Vec<(String, Act)> {
         ));
     }
     for (n, a) in [
-        ("Talk · screen + microphone", Act::Talk(0)),
-        ("Talk · screen + camera", Act::Talk(1)),
+        ("Talk · record a talk…", Act::TalkMenu),
+        ("Talk · slides + microphone + camera", Act::Talk(0)),
+        ("Talk · slides + microphone", Act::Talk(1)),
         ("Talk · camera + microphone", Act::Talk(2)),
         ("Present from current", Act::Present),
         ("Present from beginning", Act::PresentStart),
@@ -1201,6 +1224,7 @@ fn default_code(e: &Editor) -> u16 {
         Some(Kind::DeckSettings) | Some(Kind::FileWorkflow) | Some(Kind::TextEditor { .. }) => 1,
         Some(Kind::DisplaySetup(_)) => 1,
         Some(Kind::OneScreen { .. }) => 21,
+        Some(Kind::Talk) => 30,
         Some(Kind::Message) | Some(Kind::Recovery { .. }) | Some(Kind::Confirm(_)) => 1,
         Some(Kind::Ask(_)) => e
             .dialog
@@ -1709,6 +1733,26 @@ pub fn button(e: &mut Editor, x: &mut X, code: u16) -> Request {
             }
             _ => close(e),
         },
+        Kind::Talk => {
+            if code != 30 {
+                close(e);
+                return Request::None;
+            }
+            let (i, sound) = e
+                .dialog
+                .as_ref()
+                .map(|d| (d.combo_index(0), d.check_value(Kid::D(0))))
+                .unwrap_or((0, false));
+            let key = TALK_PROFILES.get(i).map(|p| p.1).unwrap_or("slides");
+            prefs::save_display_prefs(&[
+                ("talkSource", Some(key)),
+                ("talkVideoSound", Some(if sound { "1" } else { "0" })),
+            ]);
+            close(e);
+            if let Some(choice) = crate::talk::Choice::parse(key, sound) {
+                return e.start_talk(choice);
+            }
+        }
         Kind::OneScreen { ask, from_start } => {
             let remember = e.dialog.as_ref().is_some_and(|d| d.check_value(Kid::D(0)));
             match code {
@@ -2140,6 +2184,32 @@ fn rows(e: &Editor, d: &Dialog) -> Vec<Row> {
                 BtnKind::Normal,
             )));
             v.push(ok_cancel("OK"));
+        }
+        Kind::Talk => {
+            v.push(Row::Head("TALK MODE".into()));
+            v.push(Row::Text(
+                "Presents the deck from the beginning and records it with NIRUCLIP: the slides, your voice and, if you like, a small camera picture in the bottom-right corner.\n\nYour notes, timer and next slide stay in the private presenter view and are never recorded, also on a single laptop screen.".into(),
+                blend(c.fg, c.bg, 0.1),
+            ));
+            v.push(Row::Form("Record".into(), Ctl::Combo(0)));
+            v.push(Row::Full(Ctl::Check(
+                0,
+                "Include the sound of videos in the slides (records all computer sound)".into(),
+            )));
+            if !crate::talk::camera_present() {
+                v.push(Row::Text(
+                    "No camera was found. A choice with the camera records without it.".into(),
+                    0xffb020,
+                ));
+            }
+            v.push(Row::Text(
+                "Saved in ~/Videos with chapters (.chapters.json) and subtitles (.srt) for every slide. Esc or END AND SAVE TALK stops and saves.".into(),
+                c.muted,
+            ));
+            v.push(Row::Buttons(vec![
+                ("Cancel".into(), 0, BtnKind::Normal, true),
+                ("●  Start recording".into(), 30, BtnKind::Primary, false),
+            ]));
         }
         Kind::OneScreen { .. } => {
             v.push(Row::Head("ONE SCREEN".into()));

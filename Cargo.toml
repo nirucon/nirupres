@@ -1,13 +1,13 @@
 [package]
 name = "nirupres"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
 description = "Minimal, keyboard-oriented presentation studio for X11"
 
 [dependencies]
-x11rb = { version = "0.13", features = ["shm", "randr"] }
+x11rb = { version = "0.13", features = ["shm", "randr", "composite"] }
 ttf-parser = "0.25"
 rustybuzz = "0.20"
 ab_glyph_rasterizer = "0.1"

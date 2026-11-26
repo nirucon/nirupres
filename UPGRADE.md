@@ -1,3 +1,16 @@
+# Upgrading to NIRUPRES 3.1.0
+
+3.1.0 keeps project format 9 and Markdown format 2; decks open unchanged.
+
+- Talk mode needs NIRUCLIP 0.14 or newer, which records the audience window
+  instead of the screen. Update NIRUCLIP first (`nirux update`); with an
+  older NIRUCLIP, Talk mode shows an error and records nothing.
+- The Talk profiles are now `slides-camera`, `slides` and `camera` (plus
+  `auto`, the default). The NIRUCLIP names `screen-camera`, `screen-mic` and
+  `camera-mic` still work, so scripts that call
+  `nirupres --talk deck.nirupres screen-mic` keep working; they now record
+  the slides instead of the screen.
+
 # Upgrading to NIRUPRES 3.0.0
 
 3.0.0 keeps project format 9 and Markdown format 2; decks open unchanged, and

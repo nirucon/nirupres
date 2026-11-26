@@ -3,7 +3,7 @@
 //! process while it is idle.
 use crate::editor::{Editor, PresentReq, Request};
 use crate::present::{self, Outcome, Session};
-use crate::talk::{Poll, Talk, TalkResult};
+use crate::talk::{Choice, Poll, Talk, TalkResult};
 use crate::x::{Ev, X};
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 pub enum Start {
     Editor(Option<PathBuf>),
     Present(PathBuf),
-    Talk(PathBuf, String),
+    Talk(PathBuf, Choice),
 }
 
 pub struct App {
@@ -186,6 +186,9 @@ impl App {
                 }
             }
             self.draw()?;
+            // The first frame can start a presentation or Talk mode (a
+            // command-line start): their timers count from now on.
+            want(self.talk_poll_at);
             if self.x.has_pending() {
                 continue;
             }
@@ -282,8 +285,8 @@ impl App {
                     .present(&mut self.x, true, None, None, false, false, None);
                 self.request(r);
             }
-            Some(Start::Talk(_, profile)) => {
-                let r = self.ed.start_talk(&profile);
+            Some(Start::Talk(_, choice)) => {
+                let r = self.ed.start_talk(choice);
                 self.request(r);
             }
             _ => {}
@@ -371,38 +374,76 @@ impl App {
                     Err(e) => crate::dialogs::message(&mut self.ed, "Preview", &e.to_string()),
                 }
             }
-            Request::Talk(profile) => {
-                let titles: Vec<String> = self
-                    .ed
-                    .slides()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, s)| {
-                        let s = s.as_object().cloned().unwrap_or_default();
-                        let t = crate::model::s_or(&s, "title", "");
-                        if !t.is_empty() {
-                            t
-                        } else {
-                            let l = crate::model::s_or(&s, "layout", "");
-                            if l.is_empty() {
-                                format!("Slide {}", i + 1)
-                            } else {
-                                l
-                            }
-                        }
-                    })
-                    .collect();
-                let mut t = Talk::new(self.ed.path.as_deref(), titles, &profile);
-                match t.start() {
-                    Ok(()) => {
-                        self.talk = Some(t);
-                        self.talk_poll_at = Some(Instant::now() + Duration::from_millis(150));
-                    }
-                    Err(e) => {
-                        self.ed.status = None;
-                        crate::dialogs::message(&mut self.ed, "Talk mode", &e);
+            Request::Talk(choice) => self.start_talk(choice),
+        }
+    }
+
+    /// Talk mode: present first (the audience window must exist), then let
+    /// NIRUCLIP record that window, the microphone and the camera. The
+    /// presenter view shows REC and the camera; it is never recorded.
+    fn start_talk(&mut self, choice: Choice) {
+        let titles: Vec<String> = self
+            .ed
+            .slides()
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.as_object().cloned().unwrap_or_default();
+                let t = crate::model::s_or(&s, "title", "");
+                if !t.is_empty() {
+                    t
+                } else {
+                    let l = crate::model::s_or(&s, "layout", "");
+                    if l.is_empty() {
+                        format!("Slide {}", i + 1)
+                    } else {
+                        l
                     }
                 }
+            })
+            .collect();
+        let mut t = Talk::new(self.ed.path.as_deref(), titles, choice);
+        if let Err(e) = t.check() {
+            self.ed.status = None;
+            crate::dialogs::message(&mut self.ed, "Talk mode", &e);
+            return;
+        }
+        match self
+            .ed
+            .present(&mut self.x, true, None, None, false, true, None)
+        {
+            Request::Present(req) => self.present(req),
+            _ => {
+                self.ed.status = None;
+                return;
+            }
+        }
+        let Some(window) = self.session.as_ref().map(|s| s.audience.id) else {
+            self.ed.status = None;
+            return;
+        };
+        match t.start(Some(window)) {
+            Ok(()) => {
+                if let Some(s) = self.session.as_mut() {
+                    s.rec = Some(crate::present::RecView {
+                        state: "starting".into(),
+                        camera: choice.source == crate::talk::Source::SlidesCamera,
+                        ..Default::default()
+                    });
+                    if let Some(p) = s.presenter.as_mut() {
+                        p.dirty = true;
+                    }
+                }
+                self.talk = Some(t);
+                self.talk_poll_at = Some(Instant::now() + Duration::from_millis(150));
+            }
+            Err(e) => {
+                if let Some(mut s) = self.session.take() {
+                    s.finish(&self.x);
+                    self.session_finished(s);
+                }
+                self.ed.status = None;
+                crate::dialogs::message(&mut self.ed, "Talk mode", &e);
             }
         }
     }
@@ -412,44 +453,74 @@ impl App {
             self.talk_poll_at = None;
             return;
         };
+        if t.since.is_some() {
+            // Recording: keep the presenter's REC badge and camera current.
+            let mut live = crate::talk::live_state();
+            if t.process_ended() && live.state == "recording" {
+                // Killed or crashed: the state file was not updated.
+                live.state = "interrupted".into();
+                live.reason = "NIRUCLIP ended unexpectedly; run niruclip --recover".into();
+            }
+            let mut stopped = false;
+            if let Some(s) = self.session.as_mut() {
+                if let Some(rec) = s.rec.as_mut() {
+                    let mut next = rec.clone();
+                    let active = ["recording", "starting", "countdown", "pausing", "paused"]
+                        .contains(&live.state.as_str());
+                    if !active {
+                        stopped = true;
+                        next.state = "stopped".into();
+                        next.note = if live.reason.is_empty() {
+                            format!("recording {}", live.state)
+                        } else {
+                            live.reason.clone()
+                        };
+                    } else {
+                        next.preview = live.preview.clone();
+                        next.note = match live.camera.as_str() {
+                            "" | "ok" | "checking" => String::new(),
+                            other if !next.camera => {
+                                let _ = other;
+                                String::new()
+                            }
+                            other => format!("CAMERA: {}", other.to_uppercase()),
+                        };
+                    }
+                    if next != *rec {
+                        *rec = next;
+                        if let Some(p) = s.presenter.as_mut() {
+                            p.dirty = true;
+                        }
+                    }
+                }
+            }
+            self.talk_poll_at = if stopped {
+                None
+            } else {
+                Some(Instant::now() + Duration::from_millis(500))
+            };
+            return;
+        }
         match t.poll() {
             Poll::Waiting => self.talk_poll_at = Some(Instant::now() + Duration::from_millis(150)),
             Poll::Started(rec) => {
-                self.talk_poll_at = None;
-                let r = self
-                    .ed
-                    .present(&mut self.x, true, None, None, false, true, None);
-                match r {
-                    Request::Present(req) => {
-                        self.present(req);
-                        if self.session.is_none() {
-                            if let Some(t) = self.talk.take() {
-                                t.abort();
-                            }
-                            crate::dialogs::message(
-                                &mut self.ed,
-                                "Talk mode",
-                                "The presentation could not start; recording was stopped.",
-                            );
-                            return;
-                        }
-                        if let (Some(s), Some(t)) = (self.session.as_mut(), self.talk.as_mut()) {
-                            t.mark_slide(s.i);
-                            s.slide_changed = None;
-                        }
-                        self.ed.set_status(&format!("TALK recording · {rec}"), 4000);
+                let since = t.since;
+                if let Some(s) = self.session.as_mut() {
+                    t.mark_start(s.i);
+                    s.slide_changed = None;
+                    s.restart_clock();
+                    let live = crate::talk::live_state();
+                    if let Some(r) = s.rec.as_mut() {
+                        r.state = "recording".into();
+                        r.since = since;
+                        r.preview = live.preview;
                     }
-                    _ => {
-                        if let Some(t) = self.talk.take() {
-                            t.abort();
-                        }
-                        crate::dialogs::message(
-                            &mut self.ed,
-                            "Talk mode",
-                            "The presentation could not start; recording was stopped.",
-                        );
+                    if let Some(p) = s.presenter.as_mut() {
+                        p.dirty = true;
                     }
                 }
+                eprintln!("nirupres: Talk recording {rec}");
+                self.talk_poll_at = Some(Instant::now() + Duration::from_millis(500));
             }
             Poll::Failed(msg) => {
                 self.talk_poll_at = None;
@@ -523,13 +594,29 @@ impl App {
                 self.ed.status = None;
                 match r {
                     Ok(res) => {
+                        let name = |p: &std::path::Path| {
+                            p.file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_default()
+                        };
+                        let folder = res
+                            .recording
+                            .parent()
+                            .map(|d| {
+                                let home = crate::prefs::home();
+                                match d.strip_prefix(&home) {
+                                    Ok(rel) => format!("~/{}", rel.display()),
+                                    Err(_) => d.display().to_string(),
+                                }
+                            })
+                            .unwrap_or_default();
                         let mut text = format!(
-                            "Recording: {}\nDuration: {:02}:{:02}\nChapters: {}\nSubtitles: {}\n{} slide marker(s)",
-                            res.recording.display(),
+                            "Saved in {folder}\n\nRecording: {}\nChapters: {}\nSubtitles: {}\n\nDuration {:02}:{:02} · {} slide marker(s)",
+                            name(&res.recording),
+                            name(&res.chapters),
+                            name(&res.subtitles),
                             (res.duration / 60.0) as u64,
                             (res.duration % 60.0) as u64,
-                            res.chapters.display(),
-                            res.subtitles.display(),
                             res.markers
                         );
                         if !res.warnings.is_empty() {

@@ -1,5 +1,40 @@
 # Changelog
 
+## 3.1.0: Talk mode records only the slides
+
+- **Your notes are never in the recording.** Talk mode used to record the
+  whole screen, so in laptop presenting the presenter view with notes, timer
+  and next slide ended up in the video. It now has NIRUCLIP 0.14 record the
+  audience window by its window id: on two screens the projector window, on
+  one screen a recording stage, an audience window of 1080 lines in the
+  deck's aspect placed outside the screen (never visible, never covered). The
+  recording is a clean 1080p video whatever the laptop's resolution, and
+  nothing of the presenter view can reach it. NIRUPRES refuses to record with
+  an older NIRUCLIP instead of falling back to a screen recording.
+- **Clear choices:** the TALK button opens a dialog with slides + microphone +
+  small camera (the default when a camera is connected), slides + microphone,
+  or camera + microphone, and an option to include the sound of videos in the
+  slides. The last choice is remembered. On the command line:
+  `nirupres --talk deck.nirupres [slides-camera|slides|camera|auto]
+  [--video-sound]`; the old profile names still work.
+- **A small camera:** 16 % of the picture height (about 16 % of the width on a
+  16:9 slide), rounded with a thin accent border, in the bottom-right corner.
+- **REC in the presenter view:** a red REC badge with the recording time (an
+  amber NOT RECORDING with the reason if recording stops), and your live
+  camera picture in the CURRENT preview, where and as large as it is in the
+  video. The presenter clock starts with the recording. The STOP TALK button
+  is no longer drawn on the audience picture (it would have been recorded);
+  the presenter view's END AND SAVE TALK ends the talk.
+- **Chapters start at 0:00** and are measured from the first recorded frame;
+  they used to include the countdown and come out about 3 seconds late.
+- A Talk mode started from the command line no longer waits for an input
+  event before it notices that recording has started.
+- A stale NIRUCLIP state left by a crashed recorder no longer blocks Talk
+  mode, and a recorder that dies during the talk shows NOT RECORDING with a
+  hint to run `niruclip --recover`.
+- The "recording saved" message shows the folder and the file names instead
+  of three long paths.
+
 ## 3.0.0: Rewritten in Rust, fast and light
 
 - **One static binary, no Python or Qt.** NIRUPRES is now written in Rust and

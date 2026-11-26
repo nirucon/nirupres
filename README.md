@@ -46,9 +46,12 @@ example on Arch/Omarchy with Wayland.
   ([NIRUPRES-MARKDOWN-SPEC.md](NIRUPRES-MARKDOWN-SPEC.md)) and an AI brief you
   can hand to any text model ([NIRUPRES-AI-GUIDE.md](NIRUPRES-AI-GUIDE.md)).
   No AI account or API key is needed.
-- **Talk mode:** present from the start while NIRUCLIP records screen,
-  camera and/or microphone; each slide change becomes a chapter, and
-  `.chapters.json` and `.srt` files are written beside the recording.
+- **Talk mode:** present from the start while NIRUCLIP records the slides,
+  your voice and, if you like, a small camera picture in the bottom-right
+  corner. Only the audience picture is recorded, never the presenter view
+  with notes, timer and next slide, also on a single laptop screen. Each
+  slide change becomes a chapter, and `.chapters.json` and `.srt` files are
+  written beside the recording.
 - Verified saves (the old file is replaced only after the new one checks out)
   and an autosave recovery file for unsaved decks.
 - **Follow NIRUX** editor chrome, on by default when NIRUX is detected.
@@ -62,7 +65,9 @@ example on Arch/Omarchy with Wayland.
 - Fonts: Noto Sans and Noto Sans Mono (the slide themes use them); fontconfig
   (`fc-list`) to find them.
 - Optional: `mpv` (and `yt-dlp` for web links) for video slides, NIRUCLIP
-  and `ffprobe` for Talk mode, and NIRUX (`niructl`) for presenting mode.
+  0.14 or newer and `ffprobe` for Talk mode (the X server needs the Composite
+  extension, which every Xorg has), and NIRUX (`niructl`) for presenting
+  mode.
 
 ## Installation
 
@@ -101,7 +106,9 @@ Upgrade notes per version are in [UPGRADE.md](UPGRADE.md).
 ```sh
 nirupres [deck.nirupres]                 # the editor (opens the deck)
 nirupres --present deck.nirupres         # present from the beginning
-nirupres --talk deck.nirupres [PROFILE]  # present and record; PROFILE: screen-mic (default), screen-camera, camera-mic
+nirupres --talk deck.nirupres [PROFILE] [--video-sound]
+                                         # present and record; PROFILE: auto (default),
+                                         # slides-camera, slides or camera
 nirupres --export-pdf deck.nirupres [out.pdf]
 nirupres --check-config                  # data root, chrome source, file formats
 nirupres --version
@@ -237,9 +244,11 @@ Details on chrome, Talk mode, profiles and autosave: [docs/GUIDE.md](docs/GUIDE.
   NIRUPRES uses the same fonts Qt found through fontconfig.
 - **The inspector layout is in a bad state.** Delete
   `~/.local/share/nirupres/ui.json` to restore the default inspector layout.
-- **Talk mode does not start.** NIRUCLIP must be installed and not already
-  recording; NIRUPRES shows NIRUCLIP's error, a busy camera or a missing
-  command instead of pretending to record.
+- **Talk mode does not start.** NIRUCLIP 0.14 or newer must be installed and
+  not already recording; NIRUPRES shows NIRUCLIP's error, a busy camera or a
+  missing command instead of pretending to record. With an older NIRUCLIP it
+  refuses to record rather than fall back to a screen recording that could
+  show your notes.
 - **The editor does not follow NIRUX.** Run `nirupres --check-config`; it
   prints where the chrome theme came from.
 - **Teams shows a frozen slide.** The audience window was hidden (minimised or

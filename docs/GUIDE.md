@@ -49,22 +49,70 @@ Technical details:
 
 ## Talk mode
 
-The **TALK** toolbar menu starts a presentation from the beginning and records
-it with NIRUCLIP:
+The **TALK** toolbar button (or **Talk · record a talk…** in the command
+palette, `Ctrl+K`) opens a small dialog, then presents the deck from the
+beginning and records it with NIRUCLIP. You choose what is recorded:
 
-- Screen + microphone, screen + camera, or camera + microphone.
+| Choice | Recorded |
+|---|---|
+| Slides + microphone + small camera | the slides, your voice and your camera in the bottom-right corner (the default when a camera is connected) |
+| Slides + microphone | the slides and your voice |
+| Camera + microphone (no slides) | your camera and your voice; the slides still give the chapters |
+
+**Include the sound of videos in the slides** also records the computer's
+sound (all of it, so a notification sound would be in it too; NIRUX turns Do
+Not Disturb on while you present). The mix and the microphone alone are kept
+on separate audio tracks. NIRUPRES remembers the last choice.
+
+**Only the slides are recorded.** NIRUCLIP records the audience window by its
+X window id, not the screen, so the presenter view with your notes, timer and
+next slide is never in the video:
+
+- **One screen (a laptop):** your presenter view fills the screen. The slides
+  go to a recording stage, an audience window of 1080 lines in the deck's
+  aspect (1920x1080 for 16:9) that is placed outside the screen, where you
+  never see it and nothing can cover it. The recording is a clean 1080p video
+  whatever your laptop's resolution.
+- **Two screens:** the audience sees the slides on the projector as usual, and
+  exactly that window is recorded (at the projector's size).
+
+The camera is small (16 % of the picture height, about 16 % of the width on a
+16:9 slide), rounded, with a thin border in the NIRUX accent colour, and sits
+in the bottom-right corner with a small margin, so it stays clear of slide
+content. NIRUCLIP settings such as the camera device, shape, border, mirror and
+microphone (`~/.config/niruclip/config.toml`) still apply.
+
+The private presenter view shows a red **● REC 00:00** badge with the
+recording time (**REC STARTS…** during the 3 second countdown, an amber
+**NOT RECORDING** with the reason if NIRUCLIP stops), and your live camera
+picture in the **CURRENT** preview, exactly where and how large it is in the
+video, so you can see that you are in the frame. The presenter clock starts
+with the recording, so the timer and the video agree. Nothing that is drawn in
+the presenter view is ever recorded, and no control is drawn on the slides.
+
 - NIRUCLIP owns capture and state; NIRUPRES never starts a second recorder.
-- Each visible slide change becomes a chapter marker.
-- At the end, NIRUPRES stops NIRUCLIP and writes `.chapters.json` and `.srt`
-  beside the recording. The recording itself is never deleted.
+- Each visible slide change becomes a chapter marker, measured from the first
+  recorded frame (NIRUCLIP's `capture_started`); the first slide starts at
+  0:00.
+- **■ END AND SAVE TALK**, or `Esc`, ends the presentation (after the
+  closing fade, if the deck has one). NIRUPRES then stops NIRUCLIP and writes `.chapters.json` and
+  `.srt` beside the recording. The recording itself is never deleted.
 - Errors from NIRUCLIP, a busy camera or a missing command are shown instead of
-  claiming a successful recording.
+  claiming a successful recording. If the camera is lost while recording,
+  NIRUCLIP goes on without it and takes it back when it returns; the presenter
+  view says so.
 
-Talk mode uses the NIRUCLIP state at
-`${XDG_STATE_HOME:-~/.local/state}/niruclip/session.json` and the NIRUCLIP
-profiles `screen-mic`, `screen-camera` and `camera-mic`. Recordings are written
-to `~/Videos/NIRUPRES-DECK-TIMESTAMP.mkv`; set `NIRUPRES_TALK_DIR` to choose a
-different recording directory.
+From the command line: `nirupres --talk deck.nirupres [PROFILE]
+[--video-sound]`, where PROFILE is `slides-camera`, `slides`, `camera` or
+`auto` (the default: `slides-camera` when a camera is connected, else
+`slides`). The NIRUCLIP profile names of earlier versions (`screen-camera`,
+`screen-mic`, `camera-mic`) are still accepted and mean the same three
+choices.
+
+Talk mode needs NIRUCLIP 0.14 or newer and uses its state at
+`${XDG_STATE_HOME:-~/.local/state}/niruclip/session.json`. Recordings are
+written to `~/Videos/NIRUPRES-DECK-TIMESTAMP.mkv`; set `NIRUPRES_TALK_DIR` to
+choose a different recording directory.
 
 ## User data and desktop integration
 

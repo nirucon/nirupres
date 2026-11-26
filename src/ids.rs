@@ -32,7 +32,6 @@ pub enum Act {
     PresenterView,
     TalkMenu,
     Talk(u8),
-    TalkHelp,
     Online,
     OnlineStart,
     Overview,
@@ -68,10 +67,11 @@ pub enum Act {
     DocTitle,
 }
 
+/// Talk mode choices: label and `nirupres --talk FILE PROFILE` name.
 pub const TALK_PROFILES: [(&str, &str); 3] = [
-    ("Screen + microphone", "screen-mic"),
-    ("Screen + camera", "screen-camera"),
-    ("Camera + microphone", "camera-mic"),
+    ("Slides + microphone + small camera", "slides-camera"),
+    ("Slides + microphone", "slides"),
+    ("Camera + microphone (no slides)", "camera"),
 ];
 
 pub const LOGO_MODES: [&str; 3] = ["AUTO", "ON", "OFF"];

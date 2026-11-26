@@ -44,11 +44,19 @@ mod zip;
 
 use std::path::PathBuf;
 
-const HELP: &str = "Usage: nirupres [FILE] [--present FILE] [--talk FILE [PROFILE]] [--export-pdf FILE [OUTPUT]] [--check-config] [--version]
+const HELP: &str = "Usage: nirupres [FILE] [--present FILE] [--talk FILE [PROFILE] [--video-sound]] [--export-pdf FILE [OUTPUT]] [--check-config] [--version]
 
-The graphical editor opens when no command is given. Talk mode is available
-from the TALK menu and uses NIRUCLIP profiles screen-mic, screen-camera or
-camera-mic.";
+The graphical editor opens when no command is given.
+
+Talk mode (the TALK button, or --talk) presents the deck from the beginning
+and records it with NIRUCLIP 0.14 or newer. Only the slides are recorded,
+never the presenter view, also on a single screen. PROFILE:
+  slides-camera   slides, microphone and a small camera bottom right
+  slides          slides and microphone
+  camera          camera and microphone (no slides)
+  auto            slides-camera when a camera is connected, else slides (default)
+--video-sound also records the computer's sound (videos in the slides).
+The NIRUCLIP profile names screen-camera, screen-mic and camera-mic still work.";
 
 fn load_cli(path: &std::path::Path) -> Result<(model::Obj, tempdir::TempDir), String> {
     let dir = tempdir::TempDir::new("nirupres-cli-")?;
@@ -215,8 +223,27 @@ fn main() {
                 eprintln!("nirupres: project not found: {}", p.display());
                 std::process::exit(2);
             }
-            let profile = args.get(2).cloned().unwrap_or_else(|| "screen-mic".into());
-            gui(app::Start::Talk(p, profile), started);
+            let rest: Vec<&str> = args[2..].iter().map(String::as_str).collect();
+            let sound = rest.contains(&"--video-sound");
+            let profile = rest
+                .iter()
+                .find(|a| !a.starts_with("--"))
+                .copied()
+                .unwrap_or("auto");
+            if let Some(o) = rest
+                .iter()
+                .find(|a| a.starts_with("--") && **a != "--video-sound")
+            {
+                eprintln!("nirupres: unknown Talk option: {o}");
+                std::process::exit(2);
+            }
+            let Some(choice) = talk::Choice::parse(profile, sound) else {
+                eprintln!(
+                    "nirupres: unknown Talk profile {profile}: use slides-camera, slides, camera or auto"
+                );
+                std::process::exit(2);
+            };
+            gui(app::Start::Talk(p, choice), started);
         }
         Some(o) if o.starts_with("--") => {
             eprintln!("nirupres: unknown option: {o}");

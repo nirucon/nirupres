@@ -5,6 +5,7 @@
 use crate::canvas::Canvas;
 use std::collections::VecDeque;
 use x11rb::connection::{Connection, RequestConnection};
+use x11rb::protocol::composite::ConnectionExt as _;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::shm::ConnectionExt as _;
 use x11rb::protocol::xproto::*;
@@ -398,6 +399,41 @@ impl X {
         Ok(win)
     }
 
+    /// Turn a new (unmapped) window into the Talk mode recording stage: not
+    /// managed by the window manager (override-redirect, so it stays where
+    /// it is put, outside every screen) and redirected with Composite, so
+    /// everything drawn into it is kept in its own pixmap although no part
+    /// of it is on screen. NIRUCLIP records that pixmap. False when the X
+    /// server has no Composite extension.
+    pub fn make_stage(&self, win: Window) -> bool {
+        let _ = self
+            .c
+            .change_window_attributes(win, &ChangeWindowAttributesAux::new().override_redirect(1));
+        let has = self
+            .c
+            .extension_information(x11rb::protocol::composite::X11_EXTENSION_NAME)
+            .ok()
+            .flatten()
+            .is_some()
+            && self
+                .c
+                .composite_query_version(0, 4)
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .is_some();
+        if !has {
+            return false;
+        }
+        let ok = self
+            .c
+            .composite_redirect_window(win, x11rb::protocol::composite::Redirect::AUTOMATIC)
+            .ok()
+            .and_then(|c| c.check().ok())
+            .is_some();
+        let _ = self.c.flush();
+        ok
+    }
+
     /// A child window (the embedded video player draws into it).
     pub fn create_child(&self, parent: Window, x: i32, y: i32, w: u16, h: u16) -> Res<Window> {
         let win = self.c.generate_id()?;
@@ -774,6 +810,45 @@ impl X {
             }
         }
         // A round trip: the next frame may overwrite the shared buffer.
+        self.c.get_input_focus()?.reply()?;
+        Ok(())
+    }
+
+    /// Copy one rectangle of the canvas to the window (the presenter's live
+    /// camera picture between full redraws).
+    pub fn present_rect(&mut self, win: Window, cv: &Canvas, r: crate::canvas::Rect) -> Res<()> {
+        let r = r.intersect(&cv.bounds());
+        if r.w <= 0 || r.h <= 0 {
+            return Ok(());
+        }
+        let bytes = cv.as_bytes();
+        if !self.ensure_shm(bytes.len()) {
+            return self.present(win, cv);
+        }
+        let s = self.shm.as_ref().unwrap();
+        let row = cv.w as usize * 4;
+        for y in r.y..r.y + r.h {
+            let off = y as usize * row + r.x as usize * 4;
+            let n = r.w as usize * 4;
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().add(off), s.addr.add(off), n) };
+        }
+        self.c.shm_put_image(
+            win,
+            self.gc,
+            cv.w as u16,
+            cv.h as u16,
+            r.x as u16,
+            r.y as u16,
+            r.w as u16,
+            r.h as u16,
+            r.x as i16,
+            r.y as i16,
+            self.depth,
+            ImageFormat::Z_PIXMAP.into(),
+            false,
+            s.seg,
+            0,
+        )?;
         self.c.get_input_focus()?.reply()?;
         Ok(())
     }

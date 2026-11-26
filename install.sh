@@ -12,7 +12,7 @@
 # preferences, recent files and autosave in ~/.local/share/nirupres stay.
 set -eu
 
-VERSION_DEFAULT="3.0.0"
+VERSION_DEFAULT="3.1.0"
 MODE=auto
 for arg in "$@"; do
     case "$arg" in

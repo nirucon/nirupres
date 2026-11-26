@@ -52,7 +52,7 @@ pub enum Request {
     Quit,
     Present(PresentReq),
     TransitionPreview(usize),
-    Talk(String),
+    Talk(crate::talk::Choice),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -910,7 +910,7 @@ impl Editor {
             px: self.c.font_px,
         };
         p.button(r, label, kind, hv, false, enabled, checked);
-        if matches!(a, Act::ExportMenu | Act::TalkMenu | Act::PresetsMenu) {
+        if matches!(a, Act::ExportMenu | Act::PresetsMenu) {
             let col = if kind == BtnKind::Primary {
                 self.c.on_accent
             } else {
@@ -1236,11 +1236,7 @@ impl Editor {
                 let wsum: i32 = items
                     .iter()
                     .map(|(l, a, _, _, m)| {
-                        let extra = if matches!(a, Act::ExportMenu | Act::TalkMenu) {
-                            20
-                        } else {
-                            0
-                        };
+                        let extra = if matches!(a, Act::ExportMenu) { 20 } else { 0 };
                         (p.button_w(l) + extra).max(*m) + 4
                     })
                     .sum();
@@ -1277,11 +1273,7 @@ impl Editor {
             }
             first = false;
             for (label, a, kind, tip, minw) in items {
-                let extra = if matches!(a, Act::ExportMenu | Act::TalkMenu) {
-                    20
-                } else {
-                    0
-                };
+                let extra = if matches!(a, Act::ExportMenu) { 20 } else { 0 };
                 let bw = {
                     let p = Paint {
                         cv: &mut Canvas::new(1, 1),
@@ -2461,16 +2453,6 @@ impl Editor {
                 it("Copy AI prompt", Act::CopyAiPrompt),
                 it("AI template/spec…", Act::ExportAiTemplate),
             ],
-            Act::TalkMenu => {
-                let mut v: Vec<_> = TALK_PROFILES
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (l, _))| it(l, Act::Talk(i as u8)))
-                    .collect();
-                v.push(sep());
-                v.push(it("Talk helps / profiles…", Act::TalkHelp));
-                v
-            }
             Act::PresetsMenu => {
                 let names = [
                     self.profile_info().title_preset,
@@ -3182,7 +3164,8 @@ impl Editor {
     pub fn act(&mut self, x: &mut X, a: Act, anchor: Option<Rect>) -> Request {
         self.dirty_draw = true;
         match a {
-            Act::ExportMenu | Act::TalkMenu | Act::PresetsMenu | Act::Overflow => {
+            Act::TalkMenu => dialogs::open(self, dialogs::Kind::Talk),
+            Act::ExportMenu | Act::PresetsMenu | Act::Overflow => {
                 let anchor = anchor.unwrap_or_else(|| self.hit_rect(Hit::Act(a)));
                 let items = self.menu_items(a);
                 self.open_popup(Hit::Act(a), anchor, items, None);
@@ -3202,7 +3185,9 @@ impl Editor {
             Act::ExportPptx => dialogs::file_dialog(self, dialogs::FilePurpose::ExportPptx),
             Act::ExportMd => dialogs::file_dialog(self, dialogs::FilePurpose::ExportMd),
             Act::ExportAiBrief => dialogs::file_dialog(self, dialogs::FilePurpose::ExportAiBrief),
-            Act::ExportAiTemplate => dialogs::file_dialog(self, dialogs::FilePurpose::ExportAiTemplate),
+            Act::ExportAiTemplate => {
+                dialogs::file_dialog(self, dialogs::FilePurpose::ExportAiTemplate)
+            }
             Act::CopyAiPrompt => {
                 let t = crate::markdown::ai_brief(&self.data);
                 x.set_clipboard(self.win, &t);
@@ -3255,14 +3240,18 @@ impl Editor {
             Act::PresentStart => return self.present(x, true, None, None, false, false, None),
             Act::PresenterView => return self.presenter_view(x),
             Act::Talk(i) => {
-                let p = TALK_PROFILES.get(i as usize).map(|p| p.1).unwrap_or("screen-mic");
-                return self.start_talk(p);
+                let key = TALK_PROFILES
+                    .get(i as usize)
+                    .map(|p| p.1)
+                    .unwrap_or("slides");
+                let sound = prefs::display_prefs()
+                    .get("talkVideoSound")
+                    .and_then(|v| v.as_str())
+                    == Some("1");
+                if let Some(choice) = crate::talk::Choice::parse(key, sound) {
+                    return self.start_talk(choice);
+                }
             }
-            Act::TalkHelp => dialogs::message(
-                self,
-                "NIRUPRES Talk mode",
-                "Talk mode presents the deck from the beginning and records it with NIRUCLIP.\n\nNIRUCLIP owns the capture process and state. NIRUPRES writes slide chapters as .chapters.json and .srt beside the recording.\n\nProfiles: screen-mic, screen-camera and camera-mic. Edit them with niruclip --save-profile and choose the closest profile here.",
-            ),
             Act::Online => return self.online_present(x, false),
             Act::OnlineStart => return self.online_present(x, true),
             Act::Overview => dialogs::open(self, Kind::Overview),
@@ -3294,8 +3283,14 @@ impl Editor {
             Act::SameLayout => {
                 let cur = self.current().cloned();
                 let i = self.cur + 1;
-                let layout = cur.as_ref().map(|c| s_get(c, "layout", "STATEMENT")).unwrap_or_else(|| "STATEMENT".into());
-                let th = cur.as_ref().map(|c| s_get(c, "themeOverride", "DECK")).unwrap_or_else(|| "DECK".into());
+                let layout = cur
+                    .as_ref()
+                    .map(|c| s_get(c, "layout", "STATEMENT"))
+                    .unwrap_or_else(|| "STATEMENT".into());
+                let th = cur
+                    .as_ref()
+                    .map(|c| s_get(c, "themeOverride", "DECK"))
+                    .unwrap_or_else(|| "DECK".into());
                 let d = slide_defaults(json!({"layout": layout, "themeOverride": th}).as_object());
                 self.slides_mut().insert(i, Value::Object(d));
                 self.thumbs.clear();
@@ -3323,7 +3318,9 @@ impl Editor {
             }
             Act::PresentationCheck => self.presentation_check(),
             Act::ApplyLogo(i) => self.apply_to_selected("logoMode", LOGO_MODES[i as usize % 3]),
-            Act::ApplyAccent(i) => self.apply_to_selected("accentOverride", ACCENTS[i as usize % 7]),
+            Act::ApplyAccent(i) => {
+                self.apply_to_selected("accentOverride", ACCENTS[i as usize % 7])
+            }
             Act::ToggleOutline => {
                 self.outline = !self.outline;
                 let c = self.cur;
@@ -3346,7 +3343,9 @@ impl Editor {
                 self.field_changed(Fid::BgImg);
                 self.push_history();
             }
-            Act::ChoosePoster => dialogs::file_dialog(self, dialogs::FilePurpose::Image(Fid::VideoPoster)),
+            Act::ChoosePoster => {
+                dialogs::file_dialog(self, dialogs::FilePurpose::Image(Fid::VideoPoster))
+            }
             Act::ChooseVideo => dialogs::file_dialog(self, dialogs::FilePurpose::Video),
             Act::ApplyStyle => self.apply_style_to_selected(),
             Act::PreviewTransition => return self.preview_transition(),
@@ -4011,7 +4010,7 @@ impl Editor {
 
     // ------------------------------------------------------- presenting
 
-    pub fn start_talk(&mut self, profile: &str) -> Request {
+    pub fn start_talk(&mut self, choice: crate::talk::Choice) -> Request {
         if self.presenting {
             self.set_status(
                 "End the current presentation before starting Talk mode",
@@ -4031,8 +4030,8 @@ impl Editor {
             );
             return Request::None;
         }
-        self.set_status(&format!("Starting NIRUCLIP profile {profile}…"), 15000);
-        Request::Talk(profile.to_string())
+        self.set_status(&format!("Talk mode · {}…", choice.label()), 15000);
+        Request::Talk(choice)
     }
 
     pub fn editor_monitor(&self, x: &X, mons: &[x::Monitor]) -> usize {

@@ -108,11 +108,34 @@ pub enum Outcome {
     Finished,
 }
 
+/// The Talk recording as the presenter view shows it (never recorded).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RecView {
+    /// starting, recording or stopped.
+    pub state: String,
+    /// When the recording started (for the REC clock).
+    pub since: Option<Instant>,
+    /// Why it stopped, or a camera problem.
+    pub note: String,
+    /// The recording has the camera overlay.
+    pub camera: bool,
+    /// The live camera picture NIRUCLIP keeps.
+    pub preview: Option<std::path::PathBuf>,
+}
+
 pub struct Session {
     pub data: Obj,
     pub i: usize,
     pub online: bool,
     pub talk: bool,
+    /// Talk mode on one screen: the audience window is an off-screen
+    /// recording stage (never visible, recorded by its window id).
+    pub stage: bool,
+    pub rec: Option<RecView>,
+    rec_img: Option<(std::time::SystemTime, crate::paint::Img)>,
+    rec_rect: Option<Rect>,
+    rec_check: Instant,
+    rec_dirty: bool,
     pub dual: bool,
     pub preview_only: bool,
     pub audience: Win,
@@ -183,7 +206,6 @@ enum PHit {
     Flash,
     Cancel,
     Start,
-    Stop,
 }
 
 pub struct Config {
@@ -193,6 +215,57 @@ pub struct Config {
     pub online: bool,
     pub talk: bool,
     pub share_check: bool,
+}
+
+/// The Talk recording stage: 1080 lines in the deck's aspect (1920x1080 for
+/// 16:9), even sizes, at most 2560 wide.
+pub fn stage_size(aspect: &str) -> (i32, i32) {
+    let ar = aspect_ratio(aspect).clamp(0.5, 2.4);
+    let h = 1080.0f64;
+    let mut w = (h * ar).round() as i32;
+    let mut hh = h as i32;
+    if w > 2560 {
+        w = 2560;
+        hh = ((2560.0 / ar).round() as i32).max(2);
+    }
+    (w & !1, hh & !1)
+}
+
+/// The live camera picture NIRUCLIP writes (binary PPM, P6, 8 bit).
+pub fn read_ppm(bytes: &[u8]) -> Option<crate::paint::Img> {
+    let mut fields = Vec::new();
+    let mut i = 0;
+    while fields.len() < 4 && i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'#' {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        let st = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        fields.push(std::str::from_utf8(&bytes[st..i]).ok()?.to_string());
+    }
+    if fields.len() < 4 || fields[0] != "P6" || fields[3] != "255" {
+        return None;
+    }
+    let (w, h): (u32, u32) = (fields[1].parse().ok()?, fields[2].parse().ok()?);
+    let data = bytes.get(i + 1..)?;
+    let n = w as usize * h as usize;
+    if w == 0 || h == 0 || data.len() < n * 3 {
+        return None;
+    }
+    let mut img = crate::paint::Img::new(w, h);
+    for k in 0..n {
+        img.data[k * 4..k * 4 + 3].copy_from_slice(&data[k * 3..k * 3 + 3]);
+        img.data[k * 4 + 3] = 255;
+    }
+    Some(img)
 }
 
 fn visible(data: &Obj, i: usize) -> bool {
@@ -236,13 +309,23 @@ fn next_visible(data: &Obj, i: usize, d: i64) -> usize {
 impl Session {
     pub fn start(x: &mut X, data: Obj, cfg: Config, c: Chrome) -> x::Res<Self> {
         let f = Fonts::load().ok_or("no font")?;
-        let dual = cfg.online
+        let separate = cfg.online
             || cfg.presenter.name != cfg.audience.name
             || (cfg.presenter.x, cfg.presenter.y) != (cfg.audience.x, cfg.audience.y);
+        // Talk mode on one screen: the presenter view fills the screen and
+        // the slides go to an off-screen stage that only NIRUCLIP sees.
+        let stage = cfg.talk && !separate;
+        let dual = separate || stage;
         let start = nearest_visible(&data, cfg.start, 1);
         // The audience window.
         let am = cfg.audience.clone();
-        let (ax, ay, aw, ah) = if cfg.online {
+        let (ax, ay, aw, ah) = if stage {
+            // 1080 lines in the deck's aspect, left of the whole screen:
+            // the X screen never grows into negative coordinates, so a
+            // monitor plugged in during the talk cannot show it.
+            let (sw, sh) = stage_size(&Deck(&data).aspect());
+            (-sw - 64, 0, sw, sh)
+        } else if cfg.online {
             let aw = (640).max(1280.min((am.w as f32 * 0.86) as i32));
             let mut ah = aw * 9 / 16;
             let mut aw = aw;
@@ -267,7 +350,12 @@ impl Session {
             false,
         )?;
         x::register_window(aid);
-        if !cfg.online {
+        if stage {
+            if !x.make_stage(aid) {
+                x.destroy(aid);
+                return Err("Talk mode on one screen needs the X Composite extension, which this display does not offer. Connect a second screen, or record with “Camera + microphone”.".into());
+            }
+        } else if !cfg.online {
             x.initial_state(aid, true, false);
         }
         let mut audience = Win::new(aid, aw, ah);
@@ -289,7 +377,7 @@ impl Session {
                 false,
             )?;
             x::register_window(pid);
-            x.initial_state(pid, !cfg.online, cfg.online);
+            x.initial_state(pid, !cfg.online || stage, cfg.online && !stage);
             x.map(pid);
             presenter = Some(Win::new(pid, pm.w, pm.h));
         }
@@ -300,6 +388,12 @@ impl Session {
             i: start,
             online: cfg.online,
             talk: cfg.talk,
+            stage,
+            rec: None,
+            rec_img: None,
+            rec_rect: None,
+            rec_check: now,
+            rec_dirty: false,
             dual,
             preview_only: false,
             audience,
@@ -412,6 +506,12 @@ impl Session {
             i: from,
             online: true,
             talk: false,
+            stage: false,
+            rec: None,
+            rec_img: None,
+            rec_rect: None,
+            rec_check: now,
+            rec_dirty: false,
             dual: false,
             preview_only: true,
             audience: Win::new(id, aw, ah),
@@ -973,6 +1073,17 @@ impl Session {
         Outcome::Finished
     }
 
+    /// Talk mode: the presenter clock starts with the recording, so the
+    /// timer and pace match the video.
+    pub fn restart_clock(&mut self) {
+        self.clock = Instant::now();
+        self.paused_total = Duration::ZERO;
+        self.last_second = u64::MAX;
+        if let Some(p) = &mut self.presenter {
+            p.dirty = true;
+        }
+    }
+
     fn notes_zoom(&mut self, d: i64) {
         if !self.dual {
             return;
@@ -1237,11 +1348,6 @@ impl Session {
                         self.cursor_activity();
                         return Outcome::Running;
                     }
-                    if self.talk {
-                        if let Some((_, PHit::Stop)) = self.hits_audience_stop(*bx, *by) {
-                            return self.close_session(x);
-                        }
-                    }
                     if *button == 1 {
                         let left = *bx < self.asize.0 / 2;
                         return self.handle_key(
@@ -1294,16 +1400,6 @@ impl Session {
             _ => {}
         }
         Outcome::Running
-    }
-
-    fn hits_audience_stop(&self, x: i32, y: i32) -> Option<(Rect, PHit)> {
-        let r = self.stop_rect();
-        r.contains(x, y).then_some((r, PHit::Stop))
-    }
-
-    fn stop_rect(&self) -> Rect {
-        let (w, h) = self.asize;
-        Rect::new((w - 172 - 20).max(16), (h - 38 - 20).max(16), 172, 38)
     }
 
     fn flash(&mut self) {
@@ -1555,6 +1651,26 @@ impl Session {
             }
             want(self.last_watch + Duration::from_millis(watch));
         }
+        if let Some(path) = self
+            .rec
+            .as_ref()
+            .filter(|r| r.camera && r.state == "recording" && !self.closing)
+            .and_then(|r| r.preview.clone())
+        {
+            // The presenter's live camera picture, about 10 times a second.
+            if now >= self.rec_check {
+                self.rec_check = now + Duration::from_millis(100);
+                let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+                let known = self.rec_img.as_ref().map(|(t, _)| *t);
+                if let Some(t) = mtime.filter(|t| Some(*t) != known) {
+                    if let Some(img) = std::fs::read(&path).ok().and_then(|b| read_ppm(&b)) {
+                        self.rec_img = Some((t, img));
+                        self.rec_dirty = true;
+                    }
+                }
+            }
+            want(self.rec_check);
+        }
         let _ = self.share_status_at;
         (Outcome::Running, next)
     }
@@ -1566,23 +1682,27 @@ impl Session {
             self.audience.dirty = false;
             let mut cv = std::mem::replace(&mut self.audience.cv, Canvas::new(1, 1));
             let r = RectF::new(0.0, 0.0, cv.w as f32, cv.h as f32);
+            // The audience picture only: in Talk mode this is the recording,
+            // so no control is ever drawn here.
             self.draw_view(&mut cv, r, 1.0, true);
-            if self.talk && self.blank.is_none() {
-                let sr = self.stop_rect();
-                cv.tint(sr, 0x080808, 220);
-                cv.frame(sr, 0x777777);
-                let f = self.f.black.clone();
-                ui::text_in(&mut cv, &f, 13.0, sr, "■  STOP TALK", 0xf4f2ed, 1, 1.0);
-            }
             x.present(self.audience.id, &cv)?;
             self.audience.cv = cv;
         }
         if self.presenter.as_ref().is_some_and(|p| p.dirty) && !self.closing {
             let mut p = self.presenter.take().unwrap();
             p.dirty = false;
+            self.rec_dirty = false;
             self.draw_presenter(&mut p.cv);
             x.present(p.id, &p.cv)?;
             self.presenter = Some(p);
+        } else if self.rec_dirty && !self.closing {
+            // Only the live camera picture changed.
+            self.rec_dirty = false;
+            if let (Some(mut p), Some(r)) = (self.presenter.take(), self.rec_rect) {
+                self.draw_camera(&mut p.cv, r);
+                x.present_rect(p.id, &p.cv, r)?;
+                self.presenter = Some(p);
+            }
         }
         Ok(())
     }
@@ -1754,7 +1874,9 @@ impl Session {
         let iw = w - 32;
         let mut y = bar_h + 10;
         // Mode and audience state.
-        let mode = if self.online {
+        let mode = if self.talk {
+            "PRESENTER · TALK"
+        } else if self.online {
             "PRESENTER · ONLINE"
         } else {
             "PRESENTER · DOCKED"
@@ -1773,11 +1895,12 @@ impl Session {
         );
         let (state, warn) = self.audience_state();
         let sf = self.f.bold.clone();
+        let rec_w = self.draw_rec_badge(cv, Rect::new(x0, y, iw, 24));
         ui::text_in(
             cv,
             &sf,
             px,
-            Rect::new(x0 + mw + 28, y, iw - mw - 28, 24),
+            Rect::new(x0 + mw + 28, y, (iw - mw - 28 - rec_w).max(0), 24),
             &state,
             if warn { 0xffb020 } else { 0xd0d0d0 },
             0,
@@ -1800,7 +1923,11 @@ impl Session {
             ),
             (
                 Rect::new(x0 + (iw - ew) / 2, controls_y, ew, bh),
-                "✕  END PRESENTATION",
+                if self.talk {
+                    "■  END AND SAVE TALK"
+                } else {
+                    "✕  END PRESENTATION"
+                },
                 PHit::End,
                 BtnKind::Danger,
             ),
@@ -1826,6 +1953,94 @@ impl Session {
         }
     }
 
+    /// The REC badge at the right end of the header row; returns its width
+    /// (0 outside Talk mode).
+    fn draw_rec_badge(&mut self, cv: &mut Canvas, row: Rect) -> i32 {
+        let Some(rec) = self.rec.clone() else {
+            return 0;
+        };
+        let (label, bg, fg) = match rec.state.as_str() {
+            "recording" => {
+                let secs = rec.since.map(|t| t.elapsed().as_secs()).unwrap_or(0);
+                let clock = if secs < 3600 {
+                    format!("{:02}:{:02}", secs / 60, secs % 60)
+                } else {
+                    format!("{}:{:02}:{:02}", secs / 3600, secs % 3600 / 60, secs % 60)
+                };
+                (format!("●  REC  {clock}"), 0xD7261E, 0xffffff)
+            }
+            "stopped" => ("■  NOT RECORDING".to_string(), 0xffb020, 0x111111),
+            _ => ("●  REC STARTS…".to_string(), 0x5a1512, 0xffd9d6),
+        };
+        let f = self.f.mono_bold.clone();
+        let px = 14.0;
+        let w = ui::text_w(&f, px, &label, 0.5).ceil() as i32 + 24;
+        let r = Rect::new(row.x + row.w - w, row.y - 2, w, row.h + 4);
+        cv.round_rect(r, 5, bg);
+        ui::text_in(cv, &f, px, r, &label, fg, 1, 0.5);
+        let mut used = w;
+        if !rec.note.is_empty() {
+            let nf = self.f.bold.clone();
+            let note = ui::elide(&nf, 13.0, &rec.note, (row.w as f32 * 0.35).max(80.0), 0.0);
+            let nw = ui::text_w(&nf, 13.0, &note, 0.0).ceil() as i32 + 12;
+            ui::text_in(
+                cv,
+                &nf,
+                13.0,
+                Rect::new(r.x - nw - 10, row.y, nw, row.h),
+                &note,
+                0xffb020,
+                2,
+                0.0,
+            );
+            used += nw + 10;
+        }
+        used + 16
+    }
+
+    /// The live camera picture in `r` (rounded, a thin border), or a
+    /// placeholder while there is no fresh picture.
+    fn draw_camera(&self, cv: &mut Canvas, r: Rect) {
+        let radius = ((r.h as f32) * 0.12).round().max(4.0) as i32;
+        cv.round_rect(r, radius, 0xf4f2ed);
+        let inner = r.inset(2);
+        let fresh = self
+            .rec_img
+            .as_ref()
+            .filter(|(t, _)| t.elapsed().map(|e| e.as_secs_f32() < 2.0).unwrap_or(true));
+        match fresh {
+            Some((_, img)) if inner.w > 12 && inner.h > 12 => {
+                // Hard-edged rounded mask: the picture is redrawn often and
+                // must not accumulate blended edges.
+                let rr = (radius - 2).clamp(2, inner.w.min(inner.h) / 2 - 1);
+                let (iw, ih) = (img.w as i64, img.h as i64);
+                for py in inner.y.max(0)..(inner.y + inner.h).min(cv.h) {
+                    let ly = py - inner.y;
+                    for pxl in inner.x.max(0)..(inner.x + inner.w).min(cv.w) {
+                        let lx = pxl - inner.x;
+                        let cx = lx.clamp(rr, inner.w - rr - 1);
+                        let cy = ly.clamp(rr, inner.h - rr - 1);
+                        let (dx, dy) = (lx - cx, ly - cy);
+                        if dx * dx + dy * dy > rr * rr {
+                            continue;
+                        }
+                        let sx = (lx as i64 * iw / inner.w as i64).min(iw - 1) as usize;
+                        let sy = (ly as i64 * ih / inner.h as i64).min(ih - 1) as usize;
+                        let k = (sy * img.w as usize + sx) * 4;
+                        cv.px[(py * cv.w + pxl) as usize] = ((img.data[k] as u32) << 16)
+                            | ((img.data[k + 1] as u32) << 8)
+                            | img.data[k + 2] as u32;
+                    }
+                }
+            }
+            _ => {
+                cv.round_rect(inner, (radius - 2).max(2), 0x1a1a1a);
+                let f = self.f.mono_bold.clone();
+                ui::text_in(cv, &f, 11.0, inner, "CAMERA", 0x8a8a8a, 1, 1.0);
+            }
+        }
+    }
+
     fn audience_state(&self) -> (String, bool) {
         let warn = self.audience_viewable == Some(false);
         let s = if warn {
@@ -1842,6 +2057,13 @@ impl Session {
             "AUDIENCE: BLACK".into()
         } else if self.blank == Some('W') {
             "AUDIENCE: WHITE".into()
+        } else if self.stage {
+            "RECORDING ONLY THE SLIDES · this view is never recorded".into()
+        } else if self.talk {
+            format!(
+                "AUDIENCE → {} · recorded · this view is never recorded",
+                self.audience_mon.name
+            )
         } else if self.online {
             format!("SHARE THE WINDOW  “{AUDIENCE_TITLE}”")
         } else {
@@ -1888,6 +2110,30 @@ impl Session {
             ah * s,
         );
         self.draw_view(cv, dst, s, false);
+        // The camera as it is placed in the recording.
+        self.rec_rect = None;
+        if self
+            .rec
+            .as_ref()
+            .is_some_and(|r| r.camera && r.state != "stopped")
+        {
+            let aspect = self
+                .rec_img
+                .as_ref()
+                .map(|(_, i)| i.w as f32 / i.h.max(1) as f32)
+                .unwrap_or(16.0 / 9.0);
+            let ch = (dst.h * crate::talk::CAMERA_SHARE).round().max(24.0);
+            let cw = (ch * aspect).round();
+            let m = (dst.h * crate::talk::CAMERA_MARGIN).round().max(4.0);
+            let r = Rect::new(
+                (dst.x + dst.w - cw - m) as i32,
+                (dst.y + dst.h - ch - m) as i32,
+                cw as i32,
+                ch as i32,
+            );
+            self.rec_rect = Some(r);
+            self.draw_camera(cv, r);
+        }
         let vr = self.view_rect();
         self.preview_rect = RectF::new(dst.x + vr.x * s, dst.y + vr.y * s, vr.w * s, vr.h * s);
         self.hits.push((cur, PHit::Current));
@@ -2232,5 +2478,28 @@ impl Session {
             p.button(rr, label, kind, hv, false, true, false);
             self.hits.push((rr, hit));
         }
+    }
+}
+
+#[cfg(test)]
+mod talk_tests {
+    use super::*;
+
+    #[test]
+    fn the_stage_is_1080_lines_in_the_deck_aspect() {
+        assert_eq!(stage_size("16:9"), (1920, 1080));
+        assert_eq!(stage_size("4:3"), (1440, 1080));
+        assert_eq!(stage_size("16:10"), (1728, 1080));
+    }
+
+    #[test]
+    fn camera_preview_ppm_is_read() {
+        let mut ppm = b"P6\n# niruclip\n2 1\n255\n".to_vec();
+        ppm.extend_from_slice(&[255, 0, 0, 0, 0, 255]);
+        let img = read_ppm(&ppm).unwrap();
+        assert_eq!((img.w, img.h), (2, 1));
+        assert_eq!(&img.data[..8], &[255, 0, 0, 255, 0, 0, 255, 255]);
+        assert!(read_ppm(b"P5\n2 1\n255\n\0\0").is_none());
+        assert!(read_ppm(b"P6\n2 2\n255\n\0\0\0").is_none());
     }
 }
